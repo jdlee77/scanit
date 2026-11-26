@@ -187,3 +187,19 @@ test("save a Settings file and load it on another phone", async ({ page, browser
   await expect(other.getByRole("alert")).toContainText("isn't a scanit Settings file");
   await otherPhone.close();
 });
+
+test("renaming a Field marks exported Kits as changed since export", async ({ page }) => {
+  await openSettings(page);
+  await addField(page, "Make");
+  await newKit(page, "Radios");
+  await typeItem(page, "SN-1", { Make: "Motorola" });
+  await exportWorkbook(page);
+  await expect(page.locator(".kits li").filter({ hasText: "Radios" })).toContainText("Exported");
+
+  await openSettings(page);
+  page.once("dialog", dialog => dialog.accept("Manufacturer"));
+  await page.getByRole("button", { name: "Rename Make" }).click();
+  await expect(fieldNames(page)).toHaveText(["Manufacturer"]);
+  await page.goto("/#");
+  await expect(page.locator(".kits li").filter({ hasText: "Radios" })).toContainText("Changed since export");
+});

@@ -79,7 +79,9 @@ export function settingsScreen({ record, save, render, message }) {
     el("h1", {}, "Settings"),
     messageLine(message),
     el("h2", {}, "Fields"),
-    el("p", { class: "small" }, "Every Kit uses these Fields. Items and the Export show them in this order, after the Serial."),
+    el("p", { class: "small" }, "Every Kit uses these Fields. Items and the Export show them in this order, after the Serial. "
+      + "Adding, renaming, moving or removing a Field changes every Kit's sheet, so exported Kits will show "
+      + "\"Changed since export\"."),
     fieldList,
     addForm,
     el("h2", {}, "Settings file"),

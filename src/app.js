@@ -1,12 +1,12 @@
 // App shell: draws the screens and passes every tap to the Kit record,
 // then saves the record with the Store after every change.
-import { KitRecord, REFUSED, NEEDS_CONFIRMING, NOT_EXPORTED, EXPORTED } from "./kit-record.js";
+import { KitRecord, REFUSED, NEEDS_CONFIRMING, NOT_EXPORTED, EXPORTED, CHANGED_SINCE_EXPORT } from "./kit-record.js";
 import { openStore } from "./store.js";
 import { buildExport, encodeXlsx, exportFileName, XLSX_TYPE } from "./export-builder.js";
 import { createScanner } from "./scanner.js";
 import { formatName, isProductCode } from "./scan-reading.js";
 import { settingsScreen } from "./settings-screen.js";
-import { shareOrDownload } from "./files.js";
+import { shareOrDownload, downloadFile, SHARED, CANCELLED, SHARE_FAILED } from "./files.js";
 import { el, messageLine, plural, question } from "./dom.js";
 
 const main = document.querySelector("main");
@@ -125,10 +125,12 @@ function exportScreen(message) {
   });
   const exportButton = el("button", { type: "submit", class: "export" }, "Export");
   const count = el("p", { class: "small" });
+  const problemSlot = el("div", { class: "problem-slot" });
+  let sharing = false; // while the Share menu is open, another tap would make a second file
   const chosen = () => boxes.filter(b => b.checked).map(b => b.value);
   const showCount = () => {
     count.textContent = `${chosen().length} of ${plural(kits.length, "Kit")} ticked.`;
-    exportButton.disabled = chosen().length === 0;
+    exportButton.disabled = sharing || chosen().length === 0;
   };
   showCount();
 
@@ -139,20 +141,34 @@ function exportScreen(message) {
         el("span", { class: "name" }, kit.name), " ",
         el("span", { class: "count" }, plural(kit.items.length, "Item")),
         exportStatusLine(kit))))),
-    count, exportButton);
+    count, exportButton, problemSlot);
   form.addEventListener("change", showCount);
   form.addEventListener("submit", async event => {
     event.preventDefault();
+    if (sharing) return;
     const kitIds = chosen();
     const now = new Date();
     const name = exportFileName(now);
+    const bytes = encodeXlsx(buildExport(record, kitIds));
+    problemSlot.replaceChildren();
+    sharing = true;
+    showCount();
     // Build and hand off straight away: phones only open Share in answer to a tap.
-    const outcome = await shareOrDownload(encodeXlsx(buildExport(record, kitIds)), name, XLSX_TYPE);
-    if (outcome === "cancelled") return render({ notice: "Share was closed, so nothing was sent. The Kits are not marked exported." });
-    record.markExported(kitIds, now.toISOString());
-    if (!(await save())) return;
-    nextNotice = `${outcome === "shared" ? "Shared" : "Downloaded"} ${name} with ${plural(kitIds.length, "Kit")}.`;
-    location.hash = "#";
+    const outcome = await shareOrDownload(bytes, name, XLSX_TYPE);
+    sharing = false;
+    showCount();
+    if (outcome === CANCELLED) return render({ notice: "Share was closed, so nothing was sent. The Kits are not marked exported." });
+    if (outcome === SHARE_FAILED) {
+      // Downloading needs a fresh tap: the phone may silently block one that comes later.
+      return problemSlot.replaceChildren(question({
+        text: "Share couldn't send the file, so nothing was sent. Download it instead? "
+          + "You can then send it from your phone's Files app.",
+        yes: "Download instead", no: "Cancel",
+        onYes: () => { downloadFile(bytes, name, XLSX_TYPE); recordExport(kitIds, now, name, "Downloaded"); },
+        onNo: () => problemSlot.replaceChildren(),
+      }).element);
+    }
+    recordExport(kitIds, now, name, outcome === SHARED ? "Shared" : "Downloaded");
   });
 
   return [
@@ -428,6 +444,25 @@ function fieldInput(field, value) {
 
 // ---- Actions ---------------------------------------------------------------
 
+/**
+ * Mark the Kits in an Export as exported. The marks are made on a copy and kept only once stored,
+ * so a Kit never looks sent unless the phone has recorded it. how: "Shared" or "Downloaded".
+ */
+async function recordExport(kitIds, now, name, how) {
+  const next = KitRecord.fromJSON(record.toJSON());
+  next.markExported(kitIds, now.toISOString());
+  try {
+    await store.save(next.toJSON());
+  } catch (error) {
+    console.error(error);
+    return render(`${how} ${name}, but this phone couldn't record that, so these Kits still show as `
+      + "not sent. If you're not sure the file arrived, Export them again.");
+  }
+  record = next;
+  nextNotice = `${how} ${name} with ${plural(kitIds.length, "Kit")}.`;
+  location.hash = "#";
+}
+
 function startTyping(kitId) {
   adding = { kitId, by: "typing", pending: { raw: "" } };
   render();
@@ -459,22 +494,34 @@ async function save() {
 
 // ---- Helpers ---------------------------------------------------------------
 
+// How each Export status reads: on a Kit row, and as a warning when deleting the Kit (none if sent).
+const EXPORT_STATUS_TEXT = {
+  [NOT_EXPORTED]: {
+    line: () => "Not exported yet",
+    deleteWarning: () => "This Kit has never been exported, so no copy of it exists anywhere else.",
+  },
+  [EXPORTED]: {
+    line: at => `Exported ${formatDateTime(at)}`,
+    deleteWarning: null,
+  },
+  [CHANGED_SINCE_EXPORT]: {
+    line: () => "Changed since export",
+    deleteWarning: at => `This Kit has changed since its last Export (${formatDateTime(at)}), `
+      + "so those changes exist only on this phone.",
+  },
+};
+
 /** "Not exported yet", "Exported (date)" or "Changed since export", for a Kit row. */
 function exportStatusLine(kit) {
   const { status, exportedAt } = record.exportStatus(kit.id);
-  const text = status === NOT_EXPORTED ? "Not exported yet"
-    : status === EXPORTED ? `Exported ${formatDateTime(exportedAt)}`
-    : "Changed since export";
-  return el("span", { class: `status ${status === EXPORTED ? "" : "unsent"}` }, text);
+  return el("span", { class: status === EXPORTED ? "status" : "status unsent" }, EXPORT_STATUS_TEXT[status].line(exportedAt));
 }
 
 /** The warning for deleting a Kit whose latest contents have never left the phone, or "". */
 function unsentWarning(kit) {
   const { status, exportedAt } = record.exportStatus(kit.id);
-  if (status === EXPORTED) return "";
-  return el("strong", { class: "unsent-warning" }, status === NOT_EXPORTED
-    ? " This Kit has never been exported, so no copy of it exists anywhere else."
-    : ` This Kit has changed since its last Export (${formatDateTime(exportedAt)}), so those changes exist only on this phone.`);
+  const warning = EXPORT_STATUS_TEXT[status].deleteWarning;
+  return warning ? el("strong", { class: "unsent-warning" }, " ", warning(exportedAt)) : "";
 }
 
 // "a Code 128", "an EAN-13" (UPC is said "you-pee-see", so it takes "a").

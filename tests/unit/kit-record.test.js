@@ -313,7 +313,7 @@ test("renaming to the same name or saving the same Notes isn't a change", () => 
   assert.equal(status(record, a), "exported");
 });
 
-test("removing a Field changes only the Kits whose Items had a value for it", () => {
+test("removing a Field changes every exported Kit, since every Kit sheet loses that column", () => {
   const record = new KitRecord();
   const make = record.addField("Make").field;
   const { kit: withMake } = record.createKit("With", T1);
@@ -323,7 +323,7 @@ test("removing a Field changes only the Kits whose Items had a value for it", ()
   record.markExported([withMake.id, without.id], T4);
   record.removeField(make.id);
   assert.equal(status(record, withMake), "changed since export");
-  assert.equal(status(record, without), "exported");
+  assert.equal(status(record, without), "changed since export");
 });
 
 test("exporting again makes a changed Kit exported, with the new time", () => {
@@ -351,4 +351,39 @@ test("export status survives a round trip through the JSON document", () => {
   const back = KitRecord.fromJSON(JSON.parse(JSON.stringify(record.toJSON())));
   assert.equal(status(back, a), "exported");
   assert.equal(status(back, b), "changed since export");
+});
+
+test("adding, renaming or reordering a Field changes every exported Kit; Pick list edits don't", () => {
+  const setup = () => {
+    const record = new KitRecord();
+    const make = record.addField("Make").field;
+    const model = record.addField("Model").field;
+    const { kit } = record.createKit("K", T1);
+    record.addItem(kit.id, "SN-1", T2, { values: { [make.id]: "Motorola" } });
+    record.markExported([kit.id], T4);
+    return { record, kit, make, model };
+  };
+  const changes = {
+    "adding a Field": ({ record }) => record.addField("Condition"),
+    "renaming a Field": ({ record, model }) => record.renameField(model.id, "Model number"),
+    "moving a Field": ({ record, model }) => record.moveField(model.id, 0),
+    "loading Settings with a new Field": ({ record }) => record.mergeSettings({ fields: [{ name: "Location" }] }),
+  };
+  for (const [what, change] of Object.entries(changes)) {
+    const ctx = setup();
+    change(ctx);
+    assert.equal(status(ctx.record, ctx.kit), "changed since export", what);
+  }
+  const unchanged = {
+    "renaming a Field to its own name": ({ record, make }) => record.renameField(make.id, "Make"),
+    "moving a Field to where it is": ({ record, make }) => record.moveField(make.id, 0),
+    "renaming a Pick list value": ({ record, make }) => record.renamePick(make.id, "Motorola", "Moto"),
+    "removing a Pick list value": ({ record, make }) => record.removePick(make.id, "Motorola"),
+    "loading Settings with only known Fields": ({ record }) => record.mergeSettings({ fields: [{ name: "make", picks: ["Kenwood"] }] }),
+  };
+  for (const [what, change] of Object.entries(unchanged)) {
+    const ctx = setup();
+    change(ctx);
+    assert.equal(status(ctx.record, ctx.kit), "exported", what);
+  }
 });

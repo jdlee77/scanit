@@ -1,12 +1,12 @@
 /* Phone first: big tap targets, 16px+ text so iPhone Safari doesn't zoom into inputs. */
 :root {
   --ink: #1b1f24; --muted: #5b6470; --line: #d5dae0; --bg: #f6f7f9; --card: #fff;
-  --accent: #1f4e79; --accent-ink: #fff; --error: #a4161a;
+  --accent: #1f4e79; --accent-ink: #fff; --error: #a4161a; --warn: #8a5a00;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
   :root { --ink: #e8eaed; --muted: #a0a7b0; --line: #3a4048; --bg: #15181c; --card: #1f2329;
-    --accent: #6ea8dc; --accent-ink: #0d1014; --error: #ff8a8a; }
+    --accent: #6ea8dc; --accent-ink: #0d1014; --error: #ff8a8a; --warn: #f0b45a; }
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -151,8 +151,7 @@ button.danger { background: var(--error); color: var(--bg); }
 /* Export screen and export status */
 .kits li a { flex-wrap: wrap; }
 .status { flex-basis: 100%; font-size: 0.9rem; color: var(--muted); }
-.status.unsent { color: #b7791f; font-weight: 600; }
-@media (prefers-color-scheme: dark) { .status.unsent { color: #f0b45a; } }
+.status.unsent { color: var(--warn); font-weight: 600; }
 .reminder { font-weight: 600; }
 .export-kits { display: grid; gap: 0.5rem; }
 .export-kits li {

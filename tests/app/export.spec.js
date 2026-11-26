@@ -141,3 +141,62 @@ test("deleting a Kit warns when it was never exported or has changed since", asy
   await expect(page.locator(".kit-notes")).toHaveText("Shelf B2");
   await expect(await askToDelete("Radios")).toContainText("changed since its last Export");
 });
+
+test("while the Share menu is open, Export can't be tapped again", async ({ page }) => {
+  // A Share menu that stays open until the test closes it.
+  await page.addInitScript(() => {
+    navigator.canShare = () => true;
+    navigator.share = () => new Promise(resolve => { window.__closeShare = resolve; });
+  });
+  await threeKits(page);
+  await page.getByRole("button", { name: "Export" }).click();
+  const exportButton = page.getByRole("button", { name: "Export" });
+  await exportButton.click();
+  await expect(exportButton).toBeDisabled();
+  await page.evaluate(() => window.__closeShare());
+  await expect(page.getByRole("status")).toContainText("Shared scanit-");
+});
+
+test("when Share refuses the file, nothing is marked sent until Download instead is tapped", async ({ page }) => {
+  await page.addInitScript(() => {
+    navigator.canShare = () => true;
+    navigator.share = async () => { throw new DOMException("Not allowed", "NotAllowedError"); };
+  });
+  let downloads = 0;
+  page.on("download", () => { downloads++; });
+  await threeKits(page);
+  await page.getByRole("button", { name: "Export" }).click();
+  await page.getByRole("button", { name: "Export" }).click();
+  await expect(page.getByRole("alert")).toContainText("Share couldn't send the file");
+  expect(downloads).toBe(0); // no download behind the user's back
+
+  // Cancel: still nothing sent.
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("link", { name: "All Kits" }).click();
+  await expect(kitRow(page, "Radios")).toContainText("Not exported yet");
+
+  // Download instead: a fresh tap downloads the file, and only then are the Kits marked.
+  await page.getByRole("button", { name: "Export" }).click();
+  await page.getByRole("button", { name: "Export" }).click();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Download instead" }).click(),
+  ]);
+  const book = await openWorkbook(download);
+  expect(book.worksheets.map(s => s.name)).toEqual(["Summary", "Radios", "Laptops", "Spares"]);
+  await expect(page.getByRole("status")).toContainText("Downloaded scanit-");
+  await expect(kitRow(page, "Radios")).toContainText("Exported");
+});
+
+test("if the phone can't record the Export, the Kits don't look sent", async ({ page }) => {
+  await threeKits(page);
+  await page.evaluate(() => {
+    IDBObjectStore.prototype.put = function () { throw new DOMException("Storage is full", "QuotaExceededError"); };
+  });
+  await page.getByRole("button", { name: "Export" }).click();
+  await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export" }).click()]);
+  await expect(page.getByRole("alert")).toContainText("couldn't record that");
+  await page.getByRole("link", { name: "All Kits" }).click();
+  await expect(kitRow(page, "Radios")).toContainText("Not exported yet");
+  await expect(reminder(page)).toContainText("3 Kits");
+});

@@ -75,7 +75,7 @@ export class KitRecord {
     const kit = this.#kitOrThrow(kitId);
     const clean = cleanText(name);
     if (!clean) return refused("A Kit needs a name.");
-    if (clean !== kit.name) this.#changed(kit);
+    if (clean !== kit.name) this.#markChanged(kit);
     kit.name = clean;
     return done();
   }
@@ -84,7 +84,7 @@ export class KitRecord {
   setKitNotes(kitId, notes) {
     const kit = this.#kitOrThrow(kitId);
     const clean = cleanText(notes);
-    if (clean !== (kit.notes ?? "")) this.#changed(kit);
+    if (clean !== (kit.notes ?? "")) this.#markChanged(kit);
     if (clean) kit.notes = clean;
     else delete kit.notes;
     return done();
@@ -115,7 +115,7 @@ export class KitRecord {
     const item = { id: newId(), serial: clean, scannedAt: now, values: this.#cleanValues(values), ...(format && { format }) };
     this.#growPickLists(item.values);
     kit.items.push(item);
-    this.#changed(kit);
+    this.#markChanged(kit);
     return { outcome: ADDED, item: copy(item) };
   }
 
@@ -132,7 +132,7 @@ export class KitRecord {
     if (problem) return problem;
     const newValues = this.#cleanValues(values);
     if (clean !== item.serial || JSON.stringify(newValues) !== JSON.stringify(this.#cleanValues(item.values ?? {}))) {
-      this.#changed(kit);
+      this.#markChanged(kit);
     }
     if (clean !== item.serial) delete item.format;
     item.serial = clean;
@@ -146,7 +146,7 @@ export class KitRecord {
     const kit = this.#kitOrThrow(kitId);
     this.#itemOrThrow(kit, itemId);
     kit.items = kit.items.filter(i => i.id !== itemId);
-    this.#changed(kit);
+    this.#markChanged(kit);
     return done();
   }
 
@@ -155,7 +155,8 @@ export class KitRecord {
   /**
    * A Kit's Export status: { status, exportedAt }. status is "not exported" (never in an Export),
    * "exported" (unchanged since its last Export, at exportedAt) or "changed since export"
-   * (its Items, Notes or name changed after that Export).
+   * (its Items, Notes or name changed after that Export, or a Field was added, renamed, moved or
+   * removed, which changes every Kit sheet's columns).
    */
   exportStatus(kitId) {
     const kit = this.#kitOrThrow(kitId);
@@ -204,6 +205,7 @@ export class KitRecord {
     if (problem) return refused(problem);
     const field = { id: newId(), name: clean, picks: [] };
     this.#fields.push(field);
+    this.#markAllChanged();
     return { outcome: ADDED, field: copy(field) };
   }
 
@@ -212,6 +214,7 @@ export class KitRecord {
     const clean = cleanText(name);
     const problem = this.#fieldNameProblem(clean, field);
     if (problem) return refused(problem);
+    if (clean !== field.name) this.#markAllChanged();
     field.name = clean;
     return done();
   }
@@ -219,21 +222,19 @@ export class KitRecord {
   /** Move a Field to a new position in Settings order (0 is first). */
   moveField(fieldId, toIndex) {
     const field = this.#findField(fieldId);
-    this.#fields.splice(this.#fields.indexOf(field), 1);
-    this.#fields.splice(Math.max(0, Math.min(toIndex, this.#fields.length)), 0, field);
+    const from = this.#fields.indexOf(field);
+    this.#fields.splice(from, 1);
+    const to = Math.max(0, Math.min(toIndex, this.#fields.length));
+    this.#fields.splice(to, 0, field);
+    if (to !== from) this.#markAllChanged();
     return done();
   }
 
   /** Remove a Field. Its values go from every Item too, so they no longer appear in Exports. */
   removeField(fieldId) {
     this.#fields = this.#fields.filter(f => f.id !== fieldId);
-    for (const kit of this.#kits) {
-      for (const item of kit.items) {
-        if (item.values?.[fieldId] === undefined) continue;
-        delete item.values[fieldId];
-        this.#changed(kit); // its Items lost a value its last Export had
-      }
-    }
+    for (const kit of this.#kits) for (const item of kit.items) delete item.values?.[fieldId];
+    this.#markAllChanged();
     return done();
   }
 
@@ -279,6 +280,7 @@ export class KitRecord {
       if (!field) {
         field = { id: newId(), name: clean, picks: [] };
         this.#fields.push(field);
+        this.#markAllChanged();
         added.fields++;
       }
       for (const value of picks) if (this.#addPick(field, value)) added.values++;
@@ -292,9 +294,14 @@ export class KitRecord {
     return this.#kits.find(k => k.id === id);
   }
 
-  /** Note that a Kit changed, which matters only once it has been exported. */
-  #changed(kit) {
+  /** Note that a Kit changed since its Export (if it has one): its next Export would look different. */
+  #markChanged(kit) {
     if (kit.exportedAt) kit.changedSinceExport = true;
+  }
+
+  /** A change to the Fields alters every Kit sheet's columns, so every Kit has changed. */
+  #markAllChanged() {
+    for (const kit of this.#kits) this.#markChanged(kit);
   }
 
   #kitOrThrow(id) {
