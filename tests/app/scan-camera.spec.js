@@ -56,7 +56,7 @@ test("the Serial can be corrected before saving, and Back to camera saves nothin
   await page.goto("/");
   await createKit(page, "Spares");
   await page.getByRole("button", { name: "Scan" }).click();
-  await expect(serialBox(page)).toHaveValue("K9P2207731", READ_TIMEOUT);
+  await scanUntil(page, "K9P2207731");
 
   await page.getByRole("button", { name: "Back to camera" }).click();
   await expect(page.getByRole("region", { name: "Camera" })).toBeVisible();
@@ -88,4 +88,47 @@ test("the camera still starts when the phone refuses the first request", async (
   await page.getByRole("button", { name: "Scan" }).click();
   await expect(serialBox(page)).toHaveValue("K9P2207731", READ_TIMEOUT);
   expect(await page.evaluate(() => window.__cameraRequests)).toBe(2);
+});
+
+/** The video loops through its codes; go back to the camera until this one is read. */
+async function scanUntil(page, serial) {
+  for (let tries = 0; tries < 4; tries++) {
+    await expect(serialBox(page)).not.toHaveValue("", READ_TIMEOUT);
+    if (await serialBox(page).inputValue() === serial) return;
+    await page.getByRole("button", { name: "Back to camera" }).click();
+    await expect(serialBox(page)).toBeHidden();
+  }
+  throw new Error(`The camera never read ${serial}`);
+}
+
+test("duplicate warnings work while scanning: refused in this Kit, Save anyway for another Kit", async ({ page }) => {
+  await page.goto("/");
+  await createKit(page, "Radio Cache 3");
+  // The first code the camera shows is K9P2207731; put it in this Kit by typing it.
+  await page.getByRole("button", { name: "Type a Serial" }).click();
+  await serialBox(page).fill("K9P2207731");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+
+  // Scanning it again into the same Kit is refused; Back to camera saves nothing.
+  await page.getByRole("button", { name: "Scan" }).click();
+  await scanUntil(page, "K9P2207731");
+  await page.getByRole("button", { name: "Save & scan next" }).click();
+  await expect(page.getByRole("alert")).toContainText("K9P2207731 is already in this Kit");
+  await page.getByRole("button", { name: "Back to camera" }).click();
+  await page.getByRole("button", { name: "Back to Kit" }).click();
+  await expect(page.locator(".items .serial")).toHaveText(["K9P2207731"]);
+
+  // Scanned into another Kit, it warns, names the first Kit, and Save anyway goes on scanning.
+  await page.getByRole("link", { name: "All Kits" }).click();
+  await createKit(page, "Spares");
+  await page.getByRole("button", { name: "Scan" }).click();
+  await scanUntil(page, "K9P2207731");
+  await page.getByRole("button", { name: "Save & scan next" }).click();
+  await expect(page.getByRole("alert")).toContainText("K9P2207731 is already in Radio Cache 3");
+  await page.getByRole("button", { name: "Save anyway" }).click();
+  // Saved, and straight back to the camera for the next read.
+  await expect(serialBox(page)).not.toHaveValue("K9P2207731", READ_TIMEOUT);
+  await page.getByRole("button", { name: "Back to camera" }).click();
+  await page.getByRole("button", { name: "Back to Kit" }).click();
+  await expect(page.locator(".items .serial")).toHaveText(["K9P2207731"]);
 });

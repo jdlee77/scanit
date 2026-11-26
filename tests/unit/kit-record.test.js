@@ -188,6 +188,21 @@ test("editing to a Serial in another Kit needs confirming, then saves", () => {
   assert.equal(record.kit(a.id).items[0].serial, "SN-9");
 });
 
+test("editing an Item already confirmed into two Kits doesn't ask again unless its Serial changes", () => {
+  const { record, a } = twoKits();
+  const { item } = record.addItem(a.id, "SN-9", T3, { confirmed: true });
+  assert.equal(record.editItem(a.id, item.id, "SN-9").outcome, "done");
+  assert.equal(record.editItem(a.id, item.id, "SN-9X").outcome, "done");
+  assert.equal(record.editItem(a.id, item.id, "SN-9").outcome, "needs confirming");
+});
+
+test("one Item can be looked up by its Kit and id", () => {
+  const { record, a, b, sn2 } = twoKits();
+  assert.equal(record.item(a.id, sn2.id).serial, "SN-2");
+  assert.equal(record.item(b.id, sn2.id), undefined);
+  assert.equal(record.item("nope", sn2.id), undefined);
+});
+
 test("editing to a blank Serial is refused", () => {
   const { record, a, sn1 } = twoKits();
   assert.equal(record.editItem(a.id, sn1.id, "  ").outcome, "refused");

@@ -7,7 +7,7 @@ import { createScanner } from "./scanner.js";
 import { formatName, isProductCode } from "./scan-reading.js";
 import { settingsScreen } from "./settings-screen.js";
 import { downloadFile } from "./files.js";
-import { el, messageLine, plural } from "./dom.js";
+import { el, messageLine, plural, question } from "./dom.js";
 
 const main = document.querySelector("main");
 
@@ -65,11 +65,11 @@ function render(message) {
   // #kit/<kit id>, #kit/<kit id>/details, #kit/<kit id>/item/<item id>
   const [, kitId, page, itemId] = location.hash.match(/^#kit\/([^/]+)(?:\/(details|item)(?:\/([^/]+))?)?$/) ?? [];
   const kit = kitId && record.kit(decodeURIComponent(kitId));
-  const item = kit && page === "item" && kit.items.find(i => i.id === decodeURIComponent(itemId ?? ""));
+  const item = kit && page === "item" && record.item(kit.id, decodeURIComponent(itemId ?? ""));
   const screen = location.hash === "#settings" ? settingsScreen({ record, save, render, message })
     : !kit ? kitListScreen(message)
     : page === "details" ? kitDetailsScreen(kit, message)
-    : item ? itemEditScreen(kit, item)
+    : item ? itemEditScreen(kit, item, message)
     : adding?.kitId !== kit.id ? kitScreen(kit, message)
     : adding.pending ? itemFormScreen(kit, adding.pending, message)
     : scanScreen(kit);
@@ -184,7 +184,7 @@ function itemFormScreen(kit, pending, message) {
   return [
     el("p", { class: "meta" }, `Kit: ${kit.name}`),
     el("h1", {}, "New Item"),
-    pending.format ? el("p", { class: "meta" }, `Read from ${withArticle(formatName(pending.format))}`) : "",
+    pending.format ? el("p", { class: "meta" }, readFrom(pending.format)) : "",
     messageLine(message),
     product || "",
     form.element,
@@ -192,10 +192,9 @@ function itemFormScreen(kit, pending, message) {
 }
 
 /** Change or delete a saved Item. There's no moving: delete it here and scan it into the other Kit. */
-function itemEditScreen(kit, item) {
+function itemEditScreen(kit, item, message) {
   const saveButton = el("button", { type: "submit" }, "Save changes");
   const cancel = el("a", { href: kitLink(kit), class: "button secondary" }, "Cancel");
-  const deleteButton = el("button", { type: "button", class: "danger" }, "Delete Item");
   const form = itemForm({ serial: item.serial, values: item.values ?? {}, buttons: [saveButton, cancel] });
 
   async function saveChanges(confirmed = false) {
@@ -204,22 +203,29 @@ function itemEditScreen(kit, item) {
     if (await save()) location.hash = kitLink(kit);
   }
   form.element.addEventListener("submit", event => { event.preventDefault(); saveChanges(); });
-  deleteButton.addEventListener("click", async () => {
-    record.deleteItem(kit.id, item.id);
-    if (!(await save())) return;
-    nextNotice = `Deleted ${item.serial} from ${kit.name}.`;
-    location.hash = kitLink(kit);
+
+  const deleteItem = askBeforeDeleting({
+    button: "Delete Item",
+    text: `This deletes ${item.serial} from ${kit.name}.`,
+    yes: "Yes, delete it",
+    async onYes() {
+      record.deleteItem(kit.id, item.id);
+      if (!(await save())) return;
+      nextNotice = `Deleted ${item.serial} from ${kit.name}.`;
+      location.hash = kitLink(kit);
+    },
   });
 
   return [
     el("p", { class: "meta" }, `Kit: ${kit.name}`),
     el("h1", {}, "Edit Item"),
-    el("p", { class: "meta" }, item.format ? `Read from ${withArticle(formatName(item.format))}` : "Typed in", " · ",
+    el("p", { class: "meta" }, item.format ? readFrom(item.format) : "Typed in", " · ",
       el("time", { datetime: item.scannedAt }, formatDateTime(item.scannedAt))),
+    messageLine(message),
     form.element,
     el("h2", {}, "Delete"),
     el("p", { class: "small" }, "To move this Item to another Kit, delete it here, then scan it into that Kit."),
-    deleteButton,
+    ...deleteItem,
   ];
 }
 
@@ -229,41 +235,37 @@ function kitDetailsScreen(kit, message) {
   nameInput.value = kit.name;
   const notesBox = el("textarea", { id: "kit-notes", rows: "4" });
   notesBox.value = kit.notes ?? "";
-  const form = el("form", { class: "item-form" },
+  const problemSlot = el("div", { class: "problem-slot" });
+  const form = el("form", { class: "stack-form" },
     el("label", { for: "kit-name" }, "Kit name"), nameInput,
     el("label", { for: "kit-notes" }, "Notes"),
     el("p", { class: "small" }, "Optional. Notes go at the top of this Kit's sheet in the Export, and in the Summary."),
     notesBox,
+    problemSlot,
     el("div", { class: "buttons" },
       el("button", { type: "submit" }, "Save changes"),
       el("a", { href: kitLink(kit), class: "button secondary" }, "Cancel")));
   form.addEventListener("submit", async event => {
     event.preventDefault();
     const result = record.renameKit(kit.id, nameInput.value);
-    if (result.outcome === REFUSED) return render(result.reason);
+    // Show the refusal in place, so the Notes typed so far stay on the form.
+    if (result.outcome === REFUSED) return problemSlot.replaceChildren(el("p", { role: "alert", class: "error" }, result.reason));
     record.setKitNotes(kit.id, notesBox.value);
     if (await save()) location.hash = kitLink(kit);
   });
+  nameInput.addEventListener("input", () => problemSlot.replaceChildren());
 
-  const deleteButton = el("button", { type: "button", class: "danger" }, "Delete Kit");
-  const confirmSlot = el("div", {});
-  deleteButton.addEventListener("click", () => {
-    const yes = el("button", { type: "button", class: "danger" }, `Yes, delete ${kit.name}`);
-    const no = el("button", { type: "button", class: "secondary" }, "Keep it");
-    yes.addEventListener("click", async () => {
+  const deleteKit = askBeforeDeleting({
+    button: "Delete Kit",
+    text: `This deletes ${kit.name} and its ${plural(kit.items.length, "Item")} from this phone. `
+      + "It can't be undone; Export first if you need a copy.",
+    yes: `Yes, delete ${kit.name}`,
+    async onYes() {
       record.deleteKit(kit.id);
       if (!(await save())) return;
       nextNotice = `Deleted the Kit ${kit.name}.`;
       location.hash = "#";
-    });
-    no.addEventListener("click", () => { confirmSlot.replaceChildren(); deleteButton.hidden = false; deleteButton.focus(); });
-    deleteButton.hidden = true;
-    confirmSlot.replaceChildren(el("div", { class: "problem", role: "alertdialog", "aria-label": "Are you sure?" },
-      el("p", {}, el("strong", {}, "Are you sure? "),
-        `This deletes ${kit.name} and its ${plural(kit.items.length, "Item")} from this phone. `
-        + "It can't be undone; Export first if you need a copy."),
-      el("div", { class: "row" }, yes, no)));
-    no.focus();
+    },
   });
 
   return [
@@ -272,9 +274,28 @@ function kitDetailsScreen(kit, message) {
     messageLine(message),
     form,
     el("h2", {}, "Delete"),
-    deleteButton,
-    confirmSlot,
+    ...deleteKit,
   ];
+}
+
+/**
+ * A delete button that first asks "Are you sure?" on the page, with "Keep it" to back out.
+ * Returns the elements to place on the screen.
+ */
+function askBeforeDeleting({ button, text, yes, onYes }) {
+  const deleteButton = el("button", { type: "button", class: "danger" }, button);
+  const slot = el("div", {});
+  deleteButton.addEventListener("click", () => {
+    const ask = question({
+      label: "Are you sure?", text: [el("strong", {}, "Are you sure? "), text], yes, no: "Keep it", onYes,
+      onNo: () => { slot.replaceChildren(); deleteButton.hidden = false; deleteButton.focus(); },
+    });
+    ask.yesButton.classList.add("danger");
+    deleteButton.hidden = true;
+    slot.replaceChildren(ask.element);
+    ask.noButton.focus();
+  });
+  return [deleteButton, slot];
 }
 
 /**
@@ -289,7 +310,7 @@ function itemForm({ serial, values, buttons, focusSerial = false }) {
   serialBox.value = serial;
   const fieldInputs = record.fields().map(field => fieldInput(field, values[field.id] ?? ""));
   const problemSlot = el("div", { class: "problem-slot" });
-  const element = el("form", { class: "item-form" },
+  const element = el("form", { class: "stack-form" },
     el("label", { for: "item-serial" }, "Serial"), serialBox,
     ...fieldInputs.map(f => f.element),
     problemSlot,
@@ -316,11 +337,10 @@ function itemForm({ serial, values, buttons, focusSerial = false }) {
         return true;
       }
       if (result.outcome === NEEDS_CONFIRMING) {
-        const yes = el("button", { type: "button" }, "Save anyway");
-        const no = el("button", { type: "button", class: "secondary" }, "Change the Serial");
-        yes.addEventListener("click", saveAnyway);
-        no.addEventListener("click", () => { problemSlot.replaceChildren(); serialBox.focus(); });
-        show(el("div", { class: "problem", role: "alert" }, el("p", {}, result.reason), el("div", { class: "row" }, yes, no)));
+        show(question({
+          text: result.reason, yes: "Save anyway", no: "Change the Serial", onYes: saveAnyway,
+          onNo: () => { problemSlot.replaceChildren(); serialBox.focus(); },
+        }).element);
         return true;
       }
       return false;
@@ -373,6 +393,8 @@ async function save() {
     return true;
   } catch (error) {
     console.error(error);
+    // Go back to what's stored, so the screen never shows a change the phone doesn't have.
+    try { record = KitRecord.fromJSON(await store.load()); } catch (loadError) { console.error(loadError); }
     render("That change could not be saved on this phone. Try again; if it keeps failing, Export now.");
     return false;
   }
@@ -382,6 +404,7 @@ async function save() {
 
 // "a Code 128", "an EAN-13" (UPC is said "you-pee-see", so it takes "a").
 const withArticle = name => `${/^[AEIO]/i.test(name) ? "an" : "a"} ${name}`;
+const readFrom = format => `Read from ${withArticle(formatName(format))}`;
 const kitLink = kit => `#kit/${encodeURIComponent(kit.id)}`;
 const itemLink = (kit, item) => `${kitLink(kit)}/item/${encodeURIComponent(item.id)}`;
 const DATE = { year: "numeric", month: "short", day: "numeric" };

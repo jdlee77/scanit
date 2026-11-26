@@ -17,6 +17,7 @@ const TAKEN_NAMES = [SUMMARY, "History"];
  * Workbook content for the Export: { sheets: [{ name, rows, headerRow }] }.
  * Cells are text, numbers or Dates; headerRow is the index of the row shown in bold.
  * A Kit with Notes has them at the top of its sheet, one row per line, then a blank row, then the table.
+ * Text with line breaks (Notes in the Summary, multi-line Serials) is set to wrap in Excel.
  */
 export function buildExport(record) {
   const kits = record.kits();
@@ -29,7 +30,9 @@ export function buildExport(record) {
   };
   const fields = record.fields();
   const kitSheets = kits.map((kit, i) => {
-    const notes = kit.notes ? [...kit.notes.split("\n").map(line => [line]), []] : [];
+    // Blank lines inside the Notes are left out, so the only blank row is the one before the table.
+    const lines = (kit.notes ?? "").split("\n").map(line => line.trim()).filter(Boolean);
+    const notes = lines.length ? [...lines.map(line => [line]), []] : [];
     return {
       name: names[i + 1],
       headerRow: notes.length,
@@ -75,7 +78,7 @@ const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
 const NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const NS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const NS_PKG_REL = "http://schemas.openxmlformats.org/package/2006/relationships";
-const STYLE = { header: 1, dateTime: 2 }; // indexes into cellXfs in styles(); 0 is plain
+const STYLE = { header: 1, dateTime: 2, wrap: 3 }; // indexes into cellXfs in styles(); 0 is plain
 
 /** Encode workbook content as the bytes of an .xlsx file. */
 export function encodeXlsx({ sheets }) {
@@ -114,7 +117,9 @@ function worksheet({ rows, headerRow = 0 }, strings) {
 function cell(ref, value, isHeader, strings) {
   if (value instanceof Date) return `<c r="${ref}" s="${STYLE.dateTime}"><v>${excelSerial(value)}</v></c>`;
   if (typeof value === "number") return `<c r="${ref}"${isHeader ? ` s="${STYLE.header}"` : ""}><v>${value}</v></c>`;
-  return `<c r="${ref}" t="s"${isHeader ? ` s="${STYLE.header}"` : ""}><v>${strings.index(String(value ?? ""))}</v></c>`;
+  const text = String(value ?? "");
+  const style = isHeader ? STYLE.header : text.includes("\n") ? STYLE.wrap : 0;
+  return `<c r="${ref}" t="s"${style ? ` s="${style}"` : ""}><v>${strings.index(text)}</v></c>`;
 }
 
 function displayLength(value) {
@@ -208,7 +213,7 @@ function contentTypes(sheetCount) {
     + sheetsXml + "</Types>";
 }
 
-// Cell styles, in STYLE order: normal, bold header, date and time.
+// Cell styles, in STYLE order: normal, bold header, date and time, wrapped text.
 function styles() {
   return `<styleSheet xmlns="${NS_MAIN}">`
     + '<numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy-mm-dd hh:mm"/></numFmts>'
@@ -216,10 +221,11 @@ function styles() {
     + '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>'
     + '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
     + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-    + '<cellXfs count="3">'
+    + '<cellXfs count="4">'
     + '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
     + '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
     + '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+    + '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>'
     + "</cellXfs>"
     + '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
     + "</styleSheet>";

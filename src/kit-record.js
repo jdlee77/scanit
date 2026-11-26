@@ -47,6 +47,12 @@ export class KitRecord {
     return kit && copy(kit);
   }
 
+  /** One Item in a Kit, or undefined. */
+  item(kitId, itemId) {
+    const item = this.#findKit(kitId)?.items.find(i => i.id === itemId);
+    return item && copy(item);
+  }
+
   /**
    * Create a Kit: { outcome: "added", kit } or { outcome: "refused", reason }.
    * A reason is a sentence ready to show the user.
@@ -254,15 +260,18 @@ export class KitRecord {
   /**
    * Why this Serial can't be saved to this Kit as it stands, or null if it can.
    * A Serial matches only exactly (after trimming): serial numbers can differ by case alone.
-   * except: the Item being edited, which doesn't count as a duplicate of itself.
+   * except: the Item being edited, which doesn't count as a duplicate of itself, and whose
+   * unchanged Serial isn't asked about again.
    */
   #serialProblem(kit, serial, except, confirmed) {
     if (!serial) return refused("A Serial is required: type one in, then Save.");
     if (kit.items.some(i => i !== except && i.serial === serial)) {
       return refused(`${serial} is already in this Kit, so it wasn't saved again.`);
     }
+    // An Item whose Serial isn't changing was already confirmed (or wasn't a duplicate) when saved.
+    if (confirmed || except?.serial === serial) return null;
     const kitNames = this.#kits.filter(k => k !== kit && k.items.some(i => i.serial === serial)).map(k => k.name);
-    if (kitNames.length && !confirmed) {
+    if (kitNames.length) {
       return { outcome: NEEDS_CONFIRMING, kitNames,
         reason: `${serial} is already in ${listOf(kitNames)}. Save it in ${kit.name} as well?` };
     }

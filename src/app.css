@@ -101,8 +101,8 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
   padding: 0.7rem 0.9rem; border-left: 4px solid #b7791f; background: var(--card);
   border-radius: 0.4rem; margin: 0.5rem 0;
 }
-.item-form { display: grid; gap: 0.4rem; margin-top: 0.75rem; }
-.item-form .buttons { display: grid; gap: 0.5rem; margin-top: 0.6rem; }
+.stack-form { display: grid; gap: 0.4rem; margin-top: 0.75rem; }
+.stack-form .buttons { display: grid; gap: 0.5rem; margin-top: 0.6rem; }
 @media (prefers-reduced-motion: reduce) { .flash { transition: none; } }
 
 /* Fields, Pick lists and Settings */
@@ -140,6 +140,7 @@ a.button {
 }
 a.button.secondary { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
 button.danger { background: var(--error); color: var(--bg); }
+.problem strong { font-weight: 700; }
 .kit-notes { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--card); border-left: 4px solid var(--line);
   padding: 0.6rem 0.8rem; border-radius: 0.4rem; margin: 0.5rem 0; }
 .problem-slot:empty { display: none; }

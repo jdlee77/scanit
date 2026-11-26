@@ -36,8 +36,15 @@ test("edit and delete Items; they stay in scan order", async ({ page }) => {
   await page.getByRole("link", { name: "Cancel" }).click();
   await expect(serials(page)).toHaveText(["SN-1", "SN-2B", "SN-3"]);
 
+  // Delete asks first, on the page; "Keep it" backs out.
   await page.getByRole("link", { name: "Edit SN-1" }).click();
   await page.getByRole("button", { name: "Delete Item" }).click();
+  const ask = page.getByRole("alertdialog", { name: "Are you sure?" });
+  await expect(ask).toContainText("This deletes SN-1 from Radios");
+  await page.getByRole("button", { name: "Keep it" }).click();
+  await expect(ask).toBeHidden();
+  await page.getByRole("button", { name: "Delete Item" }).click();
+  await page.getByRole("button", { name: "Yes, delete it" }).click();
   await expect(page.getByRole("status")).toContainText("Deleted SN-1 from Radios");
   await expect(serials(page)).toHaveText(["SN-2B", "SN-3"]);
 
@@ -94,6 +101,11 @@ test("a Serial in another Kit warns, names that Kit, and saves only when confirm
   await expect(page.getByRole("alert")).toContainText("SN-5 is already in Spares");
   await page.getByRole("button", { name: "Save anyway" }).click();
   await expect(serials(page)).toHaveText(["SN-1", "SN-5"]);
+
+  // Once confirmed, editing that Item again doesn't ask again while its Serial stays the same.
+  await page.getByRole("link", { name: "Edit SN-5" }).click();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Radios" })).toBeVisible();
 });
 
 test("rename a Kit and add Notes; the Export shows them", async ({ page }) => {
@@ -108,12 +120,15 @@ test("rename a Kit and add Notes; the Export shows them", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1, name: "Radio Cache 3" })).toBeVisible();
   await expect(page.locator(".kit-notes")).toHaveText("Shelf B2\nTwo batteries missing");
 
-  // A blank name is refused.
+  // A blank name is refused, and the Notes typed so far stay on the form.
   await page.getByRole("link", { name: "Edit Kit" }).click();
   await page.getByLabel("Kit name").fill(" ");
+  await page.getByLabel("Notes").fill("Typed before the refusal");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByRole("alert")).toContainText("name");
+  await expect(page.getByLabel("Notes")).toHaveValue("Typed before the refusal");
   await page.getByRole("link", { name: "Cancel" }).click();
+  await expect(page.locator(".kit-notes")).toHaveText("Shelf B2\nTwo batteries missing");
   await expect(page.getByRole("heading", { level: 1, name: "Radio Cache 3" })).toBeVisible();
 
   // Edit the Notes.
@@ -162,4 +177,27 @@ test("deleting a Kit asks on the page, naming the Kit and its Item count", async
 
   await page.reload();
   await expect(page.locator(".kits .name")).toHaveText(["Spares"]);
+});
+
+test("when a change can't be saved, the Edit Item screen says so and nothing changes", async ({ page }) => {
+  await page.goto("/");
+  await createKit(page, "Radios");
+  await addSerial(page, "SN-1");
+  await addSerial(page, "SN-2");
+
+  // From here on, the phone's storage refuses every save.
+  await page.evaluate(() => {
+    IDBObjectStore.prototype.put = function () { throw new DOMException("Storage is full", "QuotaExceededError"); };
+  });
+  await page.getByRole("link", { name: "Edit SN-1" }).click();
+  await serialBox(page).fill("SN-1B");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("alert")).toContainText("could not be saved");
+  await expect(serialBox(page)).toHaveValue("SN-1"); // back to what's stored
+
+  await page.getByRole("button", { name: "Delete Item" }).click();
+  await page.getByRole("button", { name: "Yes, delete it" }).click();
+  await expect(page.getByRole("alert")).toContainText("could not be saved");
+  await page.getByRole("link", { name: "Cancel" }).click();
+  await expect(serials(page)).toHaveText(["SN-1", "SN-2"]);
 });

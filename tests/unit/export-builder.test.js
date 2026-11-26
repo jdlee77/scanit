@@ -48,6 +48,30 @@ test("Kit Notes go at the top of the Kit sheet, one row per line, then a blank r
   assert.equal(laptops.headerRow, 0, "a Kit without Notes starts with the table");
 });
 
+test("blank lines inside Notes are left out, so the only blank row is the one before the table", () => {
+  const record = sampleRecord();
+  record.setKitNotes(record.kits()[0].id, "Shelf B2  \n\n   \nTwo batteries missing");
+  const sheet = buildExport(record).sheets[1];
+  assert.deepEqual(sheet.rows.slice(0, 4), [["Shelf B2"], ["Two batteries missing"], [], ["Serial", "Scanned at"]]);
+});
+
+test("text with line breaks is set to wrap; other cells are not", async () => {
+  const record = sampleRecord();
+  const radios = record.kits()[0];
+  record.setKitNotes(radios.id, "Shelf B2\nTwo batteries missing");
+  record.addItem(radios.id, "Make: Motorola\nSerial: 475CTV1293", "2026-11-26T17:20:00.000Z");
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(encodeXlsx(buildExport(record)));
+  const summary = book.getWorksheet("Summary");
+  assert.equal(summary.getCell("D2").value, "Shelf B2\nTwo batteries missing");
+  assert.equal(summary.getCell("D2").alignment?.wrapText, true);
+  assert.equal(summary.getCell("A2").alignment?.wrapText, undefined);
+  const sheet = book.getWorksheet("Radio Cache 3");
+  assert.equal(sheet.getCell("A7").value, "Make: Motorola\nSerial: 475CTV1293");
+  assert.equal(sheet.getCell("A7").alignment?.wrapText, true);
+  assert.equal(sheet.getCell("A5").alignment?.wrapText, undefined);
+});
+
 test("in the workbook, the table header under the Notes is the bold row", async () => {
   const record = sampleRecord();
   record.setKitNotes(record.kits()[0].id, "Shelf B2");
