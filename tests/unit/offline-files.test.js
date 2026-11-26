@@ -1,30 +1,26 @@
 // The files the service worker keeps on the phone, the version stamp, and the web app manifest.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { ROOT, readAppFiles, appVersion } from "../../tools/app-version.js";
-
-const listed = readAppFiles().files;
-const filesIn = dir => readdirSync(join(ROOT, dir)).map(name => `${dir}/${name}`);
+import { ROOT, APP_FILES_PATH, readAppFiles, appFiles, appFilesText } from "../../tools/app-version.js";
 
 test("every listed app file exists", () => {
-  for (const file of listed) assert.ok(existsSync(join(ROOT, file)), `${file} is listed in app-files.js but missing`);
+  for (const file of readAppFiles().files) assert.ok(existsSync(join(ROOT, file)), `${file} is listed but missing`);
 });
 
-test("every file the app is made of is listed, so it works offline", () => {
-  const needed = [
-    "index.html", "manifest.webmanifest",
-    ...filesIn("src"),
-    ...filesIn("vendor").filter(f => !f.includes("LICENSE")),
-    ...filesIn("icons").filter(f => f.endsWith(".png")),
-  ];
-  for (const file of needed) assert.ok(listed.includes(file), `${file} is missing from app-files.js`);
+test("the offline file list holds the page, manifest, icons, code and vendored scanner and xlsx writer", () => {
+  const files = appFiles();
+  for (const file of ["index.html", "manifest.webmanifest", "icons/icon-192.png", "src/app.js",
+    "vendor/zxing-wasm-reader-3.1.6.js", "vendor/zxing_reader-3.1.6.wasm", "vendor/fflate-0.8.3.js"]) {
+    assert.ok(files.includes(file), `${file} should be kept offline`);
+  }
+  assert.ok(!files.some(f => f.includes("LICENSE") || f.endsWith(".py")), "licences and scripts aren't app files");
 });
 
-test("the version stamp matches the files (run `npm run stamp` after changing an app file)", () => {
-  assert.equal(readAppFiles().version, appVersion(),
-    "app-files.js has an old APP_VERSION, so phones wouldn't pick up this change. Run: npm run stamp");
+test("app-files.js is up to date: list and version (run `npm run stamp` after changing an app file)", () => {
+  assert.equal(readFileSync(APP_FILES_PATH, "utf8").replace(/\r\n/g, "\n"), appFilesText(),
+    "app-files.js is out of date, so phones wouldn't pick up this change. Run: npm run stamp");
 });
 
 /** A PNG's width and height, from its header. */

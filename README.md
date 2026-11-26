@@ -14,17 +14,21 @@ Then open <http://localhost:8790> in a browser.
 
 ## Working offline, and publishing a new version
 
-After the first visit, scanit opens, scans and exports with no signal. A service worker (`sw.js`) keeps a copy of every file listed in `app-files.js` on the phone. `manifest.webmanifest` and the pictures in `icons/` let people add scanit to the home screen. `icons/make-icons.py` draws those pictures.
+After the first visit, scanit opens, scans and exports with no signal. A service worker (`sw.js`) keeps a copy of every app file on the phone; `app-files.js` lists them. `manifest.webmanifest` and the pictures in `icons/` let people add scanit to the home screen.
 
-Because phones run their saved copy, **a changed file only reaches them when its version changes.** After changing any app file, run:
+Because phones run their saved copy, **a changed file only reaches them when the version changes.** After changing, adding or removing any app file, run:
 
 ```bash
 npm run stamp
 ```
 
-This writes a new fingerprint of the files into `app-files.js`. A test fails if you forget. Phones fetch the new version in the background on their next visit and switch to it on the visit after that. Kits are kept separately, so an update never touches them.
+This rewrites `app-files.js` with the current list of files and a new fingerprint of them. A test fails if you forget. GitHub also runs every test on each push (see the Actions tab), so a forgotten stamp shows up there as a red cross.
+
+Phones fetch a new version in the background. They switch to it the next time scanit opens, or comes back on screen showing the Kit list, as long as no other scanit window is open. Kits are kept separately, so an update never touches them.
 
 The same applies while trying changes on your computer: run `npm run stamp`, then reload the page twice.
+
+To redraw the icons, change `icons/make-icons.py` and run it. It needs Python with the Pillow library; nothing else does.
 
 ## How it's put together
 

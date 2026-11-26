@@ -2,17 +2,28 @@
 // signal (in cages, basements and trailers). The list of files and the version are in app-files.js.
 //
 // Updates: when app-files.js changes (a new APP_VERSION), the phone fetches the new files in the
-// background while the old version keeps running. The new version takes over on a later visit,
-// once no scanit window is still using the old one (see src/offline.js). Kits are in IndexedDB,
+// background while the old version keeps running. The new version takes over only when the page
+// asks (see src/offline.js) and no other scanit window is open, or once every scanit window has
+// closed, so a running page never loads files from a different version. Kits are in IndexedDB,
 // not in these caches, so an update never touches them.
 importScripts("app-files.js");
 
 const CACHE = `scanit-${self.APP_VERSION}`;
+const TAKE_OVER = "take over"; // the message src/offline.js sends; keep the two the same
 
 self.addEventListener("install", event => {
-  // cache: "reload" skips the browser's ordinary web cache, so a new version gets new files.
-  event.waitUntil(caches.open(CACHE).then(cache =>
-    cache.addAll(self.APP_FILES.map(file => new Request(file, { cache: "reload" })))));
+  event.waitUntil((async () => {
+    // Fetch every file before keeping any, so a phone never holds half of a version. The ?v= part
+    // gets fresh copies past the browser's and the hosting service's caches; each file is kept
+    // under its plain name. If any file fails, nothing is kept and the browser tries again later.
+    const responses = await Promise.all(self.APP_FILES.map(async file => {
+      const response = await fetch(`${file}?v=${self.APP_VERSION}`, { cache: "reload" });
+      if (!response.ok) throw new Error(`${file}: ${response.status}`);
+      return [file, response];
+    }));
+    const cache = await caches.open(CACHE);
+    await Promise.all(responses.map(([file, response]) => cache.put(file, response)));
+  })());
 });
 
 self.addEventListener("activate", event => {
@@ -22,9 +33,13 @@ self.addEventListener("activate", event => {
   })());
 });
 
-// The page asks the waiting new version to take over (only when it's safe: see src/offline.js).
 self.addEventListener("message", event => {
-  if (event.data === "take over") self.skipWaiting();
+  if (event.data !== TAKE_OVER) return;
+  event.waitUntil((async () => {
+    // Another open scanit window would be left running old code against new files: wait instead.
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    if (windows.length <= 1) await self.skipWaiting();
+  })());
 });
 
 self.addEventListener("fetch", event => {

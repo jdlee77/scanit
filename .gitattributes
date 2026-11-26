@@ -1,0 +1,6 @@
+# Keep text files with Unix line endings everywhere, so the app's version fingerprint is the same
+# on every computer, and never touch binary files.
+* text=auto eol=lf
+*.png binary
+*.wasm binary
+*.pdf binary

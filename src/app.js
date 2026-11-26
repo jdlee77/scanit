@@ -8,7 +8,7 @@ import { formatName, isProductCode } from "./scan-reading.js";
 import { settingsScreen } from "./settings-screen.js";
 import { shareOrDownload, downloadFile, SHARED, CANCELLED, SHARE_FAILED } from "./files.js";
 import { el, messageLine, plural, question } from "./dom.js";
-import { startOffline, keepStoredData } from "./offline.js";
+import { startOffline, keepStoredData, UPDATING } from "./offline.js";
 import { homeScreenPrompt } from "./install-prompt.js";
 
 const main = document.querySelector("main");
@@ -35,8 +35,7 @@ start();
 
 async function start() {
   // A new version waiting from an earlier visit takes over first; the page reloads by itself.
-  if (await startOffline() === "updating") return;
-  keepStoredData(); // a refusal is fine: the Export reminder still covers unsent Kits
+  if (await startOffline({ isSafeToSwitch }) === UPDATING) return;
   try {
     store = await openStore();
     record = KitRecord.fromJSON(await store.load());
@@ -93,7 +92,11 @@ function kitListScreen(message) {
     event.preventDefault();
     const result = record.createKit(nameInput.value, new Date().toISOString());
     if (result.outcome === REFUSED) return render(result.reason);
-    if (await save()) location.hash = kitLink(result.kit);
+    if (!(await save())) return;
+    // Now there's data worth keeping, ask the browser to keep it (asked in answer to a tap, as some
+    // browsers want). A refusal is fine: the Export reminder still covers unsent Kits.
+    keepStoredData();
+    location.hash = kitLink(result.kit);
   });
 
   const list = kits.length
@@ -116,7 +119,7 @@ function kitListScreen(message) {
 
   return [
     el("nav", { class: "top" }, el("a", { href: "#settings" }, "Settings")),
-    el("h1", {}, "Kits"), messageLine(message), homeScreenPrompt(), reminder || "", form, list, exportButton,
+    el("h1", {}, "Kits"), messageLine(message), homeScreenPrompt({ kitCount: kits.length }), reminder || "", form, list, exportButton,
   ];
 }
 
@@ -477,6 +480,12 @@ function resumeScanning() {
   adding.pending = null;
   render();
   scanner.scan();
+}
+
+/** Whether reloading into a new version now would lose nothing: on the Kit list, nothing typed, no camera. */
+function isSafeToSwitch() {
+  const onKitList = location.hash === "" || location.hash === "#";
+  return onKitList && !adding && !document.querySelector("#kit-name")?.value;
 }
 
 function stopAdding() {

@@ -4,12 +4,13 @@ import { el } from "./dom.js";
 
 const DISMISSED_KEY = "scanit.homeScreenPromptDismissed";
 
-// Chrome and Edge offer their own install dialog; keep it for the Install button.
-let installDialog = null;
-addEventListener("beforeinstallprompt", event => { event.preventDefault(); installDialog = event; });
+// Chrome and Edge announce that they can install the app; keep the event for the Install button.
+let installOffer = null;
+addEventListener("beforeinstallprompt", event => { event.preventDefault(); installOffer = event; });
 
-const isIPhone = () => /iPhone|iPad|iPod/.test(navigator.userAgent)
-  || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); // iPads that say "Mac"
+// iPhone, iPad or iPod (newer iPads say "Mac" but have a touch screen).
+const isAppleMobile = () => /iPhone|iPad|iPod/.test(navigator.userAgent)
+  || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const isInstalled = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 
 function wasDismissed() {
@@ -19,39 +20,48 @@ function rememberDismissed() {
   try { localStorage.setItem(DISMISSED_KEY, "yes"); } catch { /* shows again next time; harmless */ }
 }
 
-/** The prompt to show, or "" when scanit is already on the home screen or the prompt was dismissed. */
-export function homeScreenPrompt() {
+/**
+ * The prompt to show, or "" when scanit is already on the home screen or the prompt was dismissed.
+ * kitCount: how many Kits this browser holds, for the iPhone warning that they don't move across.
+ */
+export function homeScreenPrompt({ kitCount }) {
   if (isInstalled() || wasDismissed()) return "";
   const dismiss = el("button", { type: "button", class: "secondary small-button" }, "Dismiss");
   const box = el("aside", { class: "home-prompt", "aria-label": "Add scanit to your home screen" });
   dismiss.addEventListener("click", () => { rememberDismissed(); box.remove(); });
 
-  if (isIPhone()) {
+  if (isAppleMobile()) {
+    // A Home Screen app on iPhone keeps its own data, separate from the browser's.
+    const carryOver = kitCount > 0
+      ? `The Home Screen app starts empty: the ${kitCount === 1 ? "Kit" : `${kitCount} Kits`} here won't move across, so Export first.`
+      : "Do it before recording Kits: the Home Screen app keeps its own data, separate from this browser.";
     box.append(
       el("p", {}, el("strong", {}, "Add scanit to your Home Screen. "),
-        "In Safari, tap Share (the square with an arrow pointing up), then Add to Home Screen. "
+        "Tap Share (the square with an arrow pointing up), then Add to Home Screen. "
         + "From then on, open scanit from its icon."),
       el("p", { class: "small" }, "Why: Safari can delete a website's saved data after about seven days without a visit, "
         + "which would lose any Kit not yet exported. Apps on the Home Screen keep their data, and open with no signal."),
+      el("p", { class: "small" }, el("strong", {}, carryOver)),
       el("div", { class: "row" }, dismiss));
     return box;
   }
 
   const buttons = el("div", { class: "row" });
-  if (installDialog) {
+  if (installOffer) {
     const install = el("button", { type: "button", class: "small-button" }, "Install");
     install.addEventListener("click", async () => {
-      const dialog = installDialog;
-      installDialog = null;
-      await dialog.prompt();
-      if ((await dialog.userChoice).outcome === "accepted") { rememberDismissed(); box.remove(); }
+      const offer = installOffer;
+      installOffer = null; // the browser allows one go per offer
+      install.remove();
+      await offer.prompt();
+      if ((await offer.userChoice).outcome === "accepted") { rememberDismissed(); box.remove(); }
     });
     buttons.append(install);
   }
   buttons.append(dismiss);
   box.append(
     el("p", {}, el("strong", {}, "Install scanit as an app. "),
-      installDialog ? "Tap Install, or in your browser's menu choose Install app or Add to Home screen."
+      installOffer ? "Tap Install, or in your browser's menu choose Install app or Add to Home screen."
         : "In your browser's menu, choose Install app or Add to Home screen."),
     el("p", { class: "small" }, "It then opens from its own icon, works with no signal, and its saved data is kept."),
     buttons);
