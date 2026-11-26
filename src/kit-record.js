@@ -13,6 +13,11 @@ export const ADDED = "added";
 export const DONE = "done";
 export const REFUSED = "refused";
 export const NEEDS_CONFIRMING = "needs confirming";
+
+// Export status of a Kit: see exportStatus().
+export const NOT_EXPORTED = "not exported";
+export const EXPORTED = "exported";
+export const CHANGED_SINCE_EXPORT = "changed since export";
 const refused = reason => ({ outcome: REFUSED, reason });
 const done = extra => ({ outcome: DONE, ...extra });
 const listOf = names => new Intl.ListFormat("en", { type: "conjunction" }).format(names);
@@ -70,6 +75,7 @@ export class KitRecord {
     const kit = this.#kitOrThrow(kitId);
     const clean = cleanText(name);
     if (!clean) return refused("A Kit needs a name.");
+    if (clean !== kit.name) this.#changed(kit);
     kit.name = clean;
     return done();
   }
@@ -78,6 +84,7 @@ export class KitRecord {
   setKitNotes(kitId, notes) {
     const kit = this.#kitOrThrow(kitId);
     const clean = cleanText(notes);
+    if (clean !== (kit.notes ?? "")) this.#changed(kit);
     if (clean) kit.notes = clean;
     else delete kit.notes;
     return done();
@@ -108,6 +115,7 @@ export class KitRecord {
     const item = { id: newId(), serial: clean, scannedAt: now, values: this.#cleanValues(values), ...(format && { format }) };
     this.#growPickLists(item.values);
     kit.items.push(item);
+    this.#changed(kit);
     return { outcome: ADDED, item: copy(item) };
   }
 
@@ -122,9 +130,13 @@ export class KitRecord {
     const clean = cleanText(serial);
     const problem = this.#serialProblem(kit, clean, item, confirmed);
     if (problem) return problem;
+    const newValues = this.#cleanValues(values);
+    if (clean !== item.serial || JSON.stringify(newValues) !== JSON.stringify(this.#cleanValues(item.values ?? {}))) {
+      this.#changed(kit);
+    }
     if (clean !== item.serial) delete item.format;
     item.serial = clean;
-    item.values = this.#cleanValues(values);
+    item.values = newValues;
     this.#growPickLists(item.values);
     return done({ item: copy(item) });
   }
@@ -134,6 +146,35 @@ export class KitRecord {
     const kit = this.#kitOrThrow(kitId);
     this.#itemOrThrow(kit, itemId);
     kit.items = kit.items.filter(i => i.id !== itemId);
+    this.#changed(kit);
+    return done();
+  }
+
+  // ---- Export status ---------------------------------------------------------
+
+  /**
+   * A Kit's Export status: { status, exportedAt }. status is "not exported" (never in an Export),
+   * "exported" (unchanged since its last Export, at exportedAt) or "changed since export"
+   * (its Items, Notes or name changed after that Export).
+   */
+  exportStatus(kitId) {
+    const kit = this.#kitOrThrow(kitId);
+    if (!kit.exportedAt) return { status: NOT_EXPORTED };
+    return { status: kit.changedSinceExport ? CHANGED_SINCE_EXPORT : EXPORTED, exportedAt: kit.exportedAt };
+  }
+
+  /** How many Kits still need sending: not exported yet, or changed since their last Export. */
+  kitsNeedingExport() {
+    return this.#kits.filter(k => this.exportStatus(k.id).status !== EXPORTED).length;
+  }
+
+  /** Mark these Kits as exported now: they were just included in an Export. */
+  markExported(kitIds, now) {
+    for (const id of kitIds) {
+      const kit = this.#kitOrThrow(id);
+      kit.exportedAt = now;
+      delete kit.changedSinceExport;
+    }
     return done();
   }
 
@@ -186,7 +227,13 @@ export class KitRecord {
   /** Remove a Field. Its values go from every Item too, so they no longer appear in Exports. */
   removeField(fieldId) {
     this.#fields = this.#fields.filter(f => f.id !== fieldId);
-    for (const kit of this.#kits) for (const item of kit.items) delete item.values?.[fieldId];
+    for (const kit of this.#kits) {
+      for (const item of kit.items) {
+        if (item.values?.[fieldId] === undefined) continue;
+        delete item.values[fieldId];
+        this.#changed(kit); // its Items lost a value its last Export had
+      }
+    }
     return done();
   }
 
@@ -243,6 +290,11 @@ export class KitRecord {
 
   #findKit(id) {
     return this.#kits.find(k => k.id === id);
+  }
+
+  /** Note that a Kit changed, which matters only once it has been exported. */
+  #changed(kit) {
+    if (kit.exportedAt) kit.changedSinceExport = true;
   }
 
   #kitOrThrow(id) {

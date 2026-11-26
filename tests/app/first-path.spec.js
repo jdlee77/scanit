@@ -60,6 +60,7 @@ test("create a Kit, type Serials in, reload, and Export a workbook", async ({ pa
   await backToKits(page);
 
   await page.clock.setFixedTime(at(10, 0));
+  await page.getByRole("button", { name: "Export" }).click();
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     page.getByRole("button", { name: "Export" }).click(),

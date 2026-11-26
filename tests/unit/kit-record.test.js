@@ -262,3 +262,93 @@ test("deleting a Kit removes it and its Items, so its Serials no longer warn", (
   assert.deepEqual(record.kits().map(k => k.name), ["A"]);
   assert.equal(record.addItem(a.id, "SN-9", T3).outcome, "added");
 });
+
+// ---- Export status ------------------------------------------------------------
+
+const T4 = "2026-11-27T18:00:00.000Z";
+const status = (record, kit) => record.exportStatus(kit.id).status;
+
+test("a new Kit is not exported yet; an Export marks it exported with the time", () => {
+  const { record, a, b } = twoKits();
+  assert.equal(status(record, a), "not exported");
+  record.markExported([a.id], T4);
+  assert.deepEqual(record.exportStatus(a.id), { status: "exported", exportedAt: T4 });
+  assert.equal(status(record, b), "not exported", "only the Kits in the Export are marked");
+});
+
+test("any change to a Kit's Items, Notes or name after its Export makes it changed since export", () => {
+  const changes = {
+    "adding an Item": (r, kit) => r.addItem(kit.id, "SN-NEW", T4),
+    "editing an Item's Serial": (r, kit, sn1) => r.editItem(kit.id, sn1.id, "SN-1B"),
+    "deleting an Item": (r, kit, sn1) => r.deleteItem(kit.id, sn1.id),
+    "renaming": (r, kit) => r.renameKit(kit.id, "A2"),
+    "adding Notes": (r, kit) => r.setKitNotes(kit.id, "Shelf B2"),
+  };
+  for (const [what, change] of Object.entries(changes)) {
+    const { record, a, sn1 } = twoKits();
+    record.markExported([a.id], T4);
+    change(record, a, sn1);
+    assert.deepEqual(record.exportStatus(a.id), { status: "changed since export", exportedAt: T4 }, what);
+  }
+});
+
+test("editing an Item's Field values counts as a change; saving it unchanged doesn't", () => {
+  const record = new KitRecord();
+  const make = record.addField("Make").field;
+  const { kit } = record.createKit("K", T1);
+  const { item } = record.addItem(kit.id, "SN-1", T2, { values: { [make.id]: "Motorola" } });
+  record.markExported([kit.id], T4);
+  record.editItem(kit.id, item.id, "SN-1", { values: { [make.id]: " Motorola " } });
+  assert.equal(status(record, kit), "exported");
+  record.editItem(kit.id, item.id, "SN-1", { values: { [make.id]: "Kenwood" } });
+  assert.equal(status(record, kit), "changed since export");
+});
+
+test("renaming to the same name or saving the same Notes isn't a change", () => {
+  const { record, a } = twoKits();
+  record.setKitNotes(a.id, "Shelf B2");
+  record.markExported([a.id], T4);
+  record.renameKit(a.id, " A ");
+  record.setKitNotes(a.id, "Shelf B2 ");
+  assert.equal(status(record, a), "exported");
+});
+
+test("removing a Field changes only the Kits whose Items had a value for it", () => {
+  const record = new KitRecord();
+  const make = record.addField("Make").field;
+  const { kit: withMake } = record.createKit("With", T1);
+  const { kit: without } = record.createKit("Without", T1);
+  record.addItem(withMake.id, "SN-1", T2, { values: { [make.id]: "Motorola" } });
+  record.addItem(without.id, "SN-2", T2);
+  record.markExported([withMake.id, without.id], T4);
+  record.removeField(make.id);
+  assert.equal(status(record, withMake), "changed since export");
+  assert.equal(status(record, without), "exported");
+});
+
+test("exporting again makes a changed Kit exported, with the new time", () => {
+  const { record, a } = twoKits();
+  record.markExported([a.id], T3);
+  record.addItem(a.id, "SN-NEW", T4);
+  record.markExported([a.id], T4);
+  assert.deepEqual(record.exportStatus(a.id), { status: "exported", exportedAt: T4 });
+});
+
+test("the reminder counts Kits not exported yet or changed since export", () => {
+  const { record, a, b } = twoKits();
+  const { kit: c } = record.createKit("C", T1);
+  assert.equal(record.kitsNeedingExport(), 3);
+  record.markExported([a.id, b.id, c.id], T4);
+  assert.equal(record.kitsNeedingExport(), 0);
+  record.renameKit(b.id, "B2");
+  assert.equal(record.kitsNeedingExport(), 1);
+});
+
+test("export status survives a round trip through the JSON document", () => {
+  const { record, a, b } = twoKits();
+  record.markExported([a.id, b.id], T4);
+  record.addItem(b.id, "SN-NEW", T4);
+  const back = KitRecord.fromJSON(JSON.parse(JSON.stringify(record.toJSON())));
+  assert.equal(status(back, a), "exported");
+  assert.equal(status(back, b), "changed since export");
+});

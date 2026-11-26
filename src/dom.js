@@ -27,6 +27,6 @@ export function question({ text, yes, no, onYes, onNo, label }) {
   yesButton.addEventListener("click", onYes);
   noButton.addEventListener("click", onNo);
   const element = el("div", { class: "problem", role: label ? "alertdialog" : "alert", ...(label && { "aria-label": label }) },
-    el("p", {}, ...[text].flat()), el("div", { class: "row" }, yesButton, noButton));
+    el("p", {}, ...[text].flat(Infinity)), el("div", { class: "row" }, yesButton, noButton));
   return { element, yesButton, noButton };
 }

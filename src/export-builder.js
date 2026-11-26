@@ -14,13 +14,15 @@ const FORBIDDEN = /[:\\/?*[\]]/g;
 const TAKEN_NAMES = [SUMMARY, "History"];
 
 /**
- * Workbook content for the Export: { sheets: [{ name, rows, headerRow }] }.
+ * Workbook content for the Export of the Kits with these ids (all Kits if left out), in Kit order:
+ * { sheets: [{ name, rows, headerRow }] }.
  * Cells are text, numbers or Dates; headerRow is the index of the row shown in bold.
  * A Kit with Notes has them at the top of its sheet, one row per line, then a blank row, then the table.
  * Text with line breaks (Notes in the Summary, multi-line Serials) is set to wrap in Excel.
  */
-export function buildExport(record) {
-  const kits = record.kits();
+export function buildExport(record, kitIds) {
+  const included = kitIds && new Set(kitIds);
+  const kits = record.kits().filter(k => !included || included.has(k.id));
   const names = sheetNames(kits.map(k => k.name));
   const summary = {
     name: names[0],

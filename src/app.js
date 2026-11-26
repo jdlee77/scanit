@@ -1,12 +1,12 @@
 // App shell: draws the screens and passes every tap to the Kit record,
 // then saves the record with the Store after every change.
-import { KitRecord, REFUSED, NEEDS_CONFIRMING } from "./kit-record.js";
+import { KitRecord, REFUSED, NEEDS_CONFIRMING, NOT_EXPORTED, EXPORTED } from "./kit-record.js";
 import { openStore } from "./store.js";
 import { buildExport, encodeXlsx, exportFileName, XLSX_TYPE } from "./export-builder.js";
 import { createScanner } from "./scanner.js";
 import { formatName, isProductCode } from "./scan-reading.js";
 import { settingsScreen } from "./settings-screen.js";
-import { downloadFile } from "./files.js";
+import { shareOrDownload } from "./files.js";
 import { el, messageLine, plural, question } from "./dom.js";
 
 const main = document.querySelector("main");
@@ -67,6 +67,7 @@ function render(message) {
   const kit = kitId && record.kit(decodeURIComponent(kitId));
   const item = kit && page === "item" && record.item(kit.id, decodeURIComponent(itemId ?? ""));
   const screen = location.hash === "#settings" ? settingsScreen({ record, save, render, message })
+    : location.hash === "#export" ? exportScreen(message)
     : !kit ? kitListScreen(message)
     : page === "details" ? kitDetailsScreen(kit, message)
     : item ? itemEditScreen(kit, item, message)
@@ -94,17 +95,73 @@ function kitListScreen(message) {
     ? el("ul", { class: "kits" }, ...kits.map(kit => el("li", {},
       el("a", { href: kitLink(kit) },
         el("span", { class: "name" }, kit.name),
-        el("span", { class: "count" }, plural(kit.items.length, "Item"))))))
+        el("span", { class: "count" }, plural(kit.items.length, "Item")),
+        exportStatusLine(kit)))))
     : el("p", { class: "empty" }, "No Kits yet. Create one to start recording Items.");
+
+  // The Export is the only copy off the phone (ADR 0001), so say what still needs sending.
+  const needing = record.kitsNeedingExport();
+  const reminder = needing > 0 && el("p", { class: "note reminder" },
+    `${plural(needing, "Kit")} not exported yet or changed since export. `
+    + "The Export is the only copy that leaves this phone.");
 
   const exportButton = el("button", { type: "button", class: "export" }, "Export");
   exportButton.disabled = kits.length === 0;
-  exportButton.addEventListener("click", () =>
-    downloadFile(encodeXlsx(buildExport(record)), exportFileName(new Date()), XLSX_TYPE));
+  exportButton.addEventListener("click", () => { location.hash = "#export"; });
 
   return [
     el("nav", { class: "top" }, el("a", { href: "#settings" }, "Settings")),
-    el("h1", {}, "Kits"), messageLine(message), form, list, exportButton,
+    el("h1", {}, "Kits"), messageLine(message), reminder || "", form, list, exportButton,
+  ];
+}
+
+/** Choose the Kits to include, then hand the workbook off through Share (or download it). */
+function exportScreen(message) {
+  const kits = record.kits();
+  const boxes = kits.map(kit => {
+    const box = el("input", { type: "checkbox", id: `export-${kit.id}`, value: kit.id });
+    box.checked = true;
+    return box;
+  });
+  const exportButton = el("button", { type: "submit", class: "export" }, "Export");
+  const count = el("p", { class: "small" });
+  const chosen = () => boxes.filter(b => b.checked).map(b => b.value);
+  const showCount = () => {
+    count.textContent = `${chosen().length} of ${plural(kits.length, "Kit")} ticked.`;
+    exportButton.disabled = chosen().length === 0;
+  };
+  showCount();
+
+  const form = el("form", { class: "stack-form" },
+    el("ul", { class: "export-kits" }, ...kits.map((kit, i) => el("li", {},
+      boxes[i],
+      el("label", { for: boxes[i].id },
+        el("span", { class: "name" }, kit.name), " ",
+        el("span", { class: "count" }, plural(kit.items.length, "Item")),
+        exportStatusLine(kit))))),
+    count, exportButton);
+  form.addEventListener("change", showCount);
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const kitIds = chosen();
+    const now = new Date();
+    const name = exportFileName(now);
+    // Build and hand off straight away: phones only open Share in answer to a tap.
+    const outcome = await shareOrDownload(encodeXlsx(buildExport(record, kitIds)), name, XLSX_TYPE);
+    if (outcome === "cancelled") return render({ notice: "Share was closed, so nothing was sent. The Kits are not marked exported." });
+    record.markExported(kitIds, now.toISOString());
+    if (!(await save())) return;
+    nextNotice = `${outcome === "shared" ? "Shared" : "Downloaded"} ${name} with ${plural(kitIds.length, "Kit")}.`;
+    location.hash = "#";
+  });
+
+  return [
+    el("a", { href: "#", class: "back" }, "All Kits"),
+    el("h1", {}, "Export"),
+    el("p", { class: "small" }, "Tick the Kits to include. Export makes one Excel workbook and opens your phone's "
+      + "Share menu, to send it by email, Teams, Drive and so on. Where Share isn't available, it downloads."),
+    messageLine(message),
+    kits.length ? form : el("p", { class: "empty" }, "No Kits to export yet."),
   ];
 }
 
@@ -257,8 +314,8 @@ function kitDetailsScreen(kit, message) {
 
   const deleteKit = askBeforeDeleting({
     button: "Delete Kit",
-    text: `This deletes ${kit.name} and its ${plural(kit.items.length, "Item")} from this phone. `
-      + "It can't be undone; Export first if you need a copy.",
+    text: [`This deletes ${kit.name} and its ${plural(kit.items.length, "Item")} from this phone. `
+      + "It can't be undone; Export first if you need a copy.", unsentWarning(kit)],
     yes: `Yes, delete ${kit.name}`,
     async onYes() {
       record.deleteKit(kit.id);
@@ -401,6 +458,24 @@ async function save() {
 }
 
 // ---- Helpers ---------------------------------------------------------------
+
+/** "Not exported yet", "Exported (date)" or "Changed since export", for a Kit row. */
+function exportStatusLine(kit) {
+  const { status, exportedAt } = record.exportStatus(kit.id);
+  const text = status === NOT_EXPORTED ? "Not exported yet"
+    : status === EXPORTED ? `Exported ${formatDateTime(exportedAt)}`
+    : "Changed since export";
+  return el("span", { class: `status ${status === EXPORTED ? "" : "unsent"}` }, text);
+}
+
+/** The warning for deleting a Kit whose latest contents have never left the phone, or "". */
+function unsentWarning(kit) {
+  const { status, exportedAt } = record.exportStatus(kit.id);
+  if (status === EXPORTED) return "";
+  return el("strong", { class: "unsent-warning" }, status === NOT_EXPORTED
+    ? " This Kit has never been exported, so no copy of it exists anywhere else."
+    : ` This Kit has changed since its last Export (${formatDateTime(exportedAt)}), so those changes exist only on this phone.`);
+}
 
 // "a Code 128", "an EAN-13" (UPC is said "you-pee-see", so it takes "a").
 const withArticle = name => `${/^[AEIO]/i.test(name) ? "an" : "a"} ${name}`;

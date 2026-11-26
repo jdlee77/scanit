@@ -21,6 +21,15 @@ test("an Export has a Summary sheet first, then one sheet per Kit", () => {
   assert.deepEqual(sheets.map(s => s.name), ["Summary", "Radio Cache 3", "EOC Laptops"]);
 });
 
+test("an Export of chosen Kits has only those in the Summary and as sheets, in Kit order", () => {
+  const record = sampleRecord();
+  const { kit: third } = record.createKit("Spares", "2026-11-22T09:15:00.000Z");
+  const [radios] = record.kits();
+  const sheets = buildExport(record, [third.id, radios.id]).sheets;
+  assert.deepEqual(sheets.map(s => s.name), ["Summary", "Radio Cache 3", "Spares"]);
+  assert.deepEqual(sheets[0].rows.map(r => r[0]), ["Kit name", "Radio Cache 3", "Spares"]);
+});
+
 test("the Summary lists each Kit with its created date, Item count and Notes", () => {
   const [summary] = buildExport(sampleRecord()).sheets;
   assert.deepEqual(summary.rows, [

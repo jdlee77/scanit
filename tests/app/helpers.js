@@ -42,17 +42,33 @@ export async function countFeedback(page) {
 }
 export const readFeedback = page => page.evaluate(() => ({ ...window.__feedback }));
 
-/** Tap Export on the Kit list and open the downloaded workbook. */
-export async function exportWorkbook(page) {
-  const { default: ExcelJS } = await import("exceljs");
+/**
+ * Go from the Kit list to the Export screen, untick the Kits named in leaveOut, tap Export, and
+ * return the download (Chromium here has no Share menu, so the file downloads).
+ */
+export async function downloadExport(page, { leaveOut = [] } = {}) {
   await page.goto("/#");
+  await page.getByRole("button", { name: "Export" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Export" })).toBeVisible();
+  for (const name of leaveOut) await page.getByRole("checkbox", { name: new RegExp(`^${name}\\b`) }).uncheck();
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     page.getByRole("button", { name: "Export" }).click(),
   ]);
+  return download;
+}
+
+/** Open a downloaded workbook with ExcelJS. */
+export async function openWorkbook(download) {
+  const { default: ExcelJS } = await import("exceljs");
   const book = new ExcelJS.Workbook();
   await book.xlsx.readFile(await download.path());
   return book;
+}
+
+/** Export every Kit and open the downloaded workbook. */
+export async function exportWorkbook(page) {
+  return openWorkbook(await downloadExport(page));
 }
 
 /** A sheet's rows as arrays of cell values, blank cells as null. */

@@ -147,3 +147,19 @@ button.danger { background: var(--error); color: var(--bg); }
 .problem-slot .error { margin: 0.4rem 0 0; }
 .problem p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .problem .row { flex-wrap: wrap; }
+
+/* Export screen and export status */
+.kits li a { flex-wrap: wrap; }
+.status { flex-basis: 100%; font-size: 0.9rem; color: var(--muted); }
+.status.unsent { color: #b7791f; font-weight: 600; }
+@media (prefers-color-scheme: dark) { .status.unsent { color: #f0b45a; } }
+.reminder { font-weight: 600; }
+.export-kits { display: grid; gap: 0.5rem; }
+.export-kits li {
+  display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.75rem 0.9rem;
+  background: var(--card); border: 1px solid var(--line); border-radius: 0.6rem;
+}
+.export-kits input[type=checkbox] { flex: none; width: 1.5rem; height: 1.5rem; margin: 0.1rem 0 0; accent-color: var(--accent); }
+.export-kits label { flex: 1; min-width: 0; margin: 0; font-weight: 400; display: flex; flex-wrap: wrap; gap: 0 0.5rem; }
+.export-kits .count { margin-left: auto; }
+.unsent-warning { display: block; margin-top: 0.4rem; }
