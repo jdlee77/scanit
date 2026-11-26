@@ -1,0 +1,53 @@
+/* Phone first: big tap targets, 16px+ text so iPhone Safari doesn't zoom into inputs. */
+:root {
+  --ink: #1b1f24; --muted: #5b6470; --line: #d5dae0; --bg: #f6f7f9; --card: #fff;
+  --accent: #1f4e79; --accent-ink: #fff; --error: #a4161a;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --ink: #e8eaed; --muted: #a0a7b0; --line: #3a4048; --bg: #15181c; --card: #1f2329;
+    --accent: #6ea8dc; --accent-ink: #0d1014; --error: #ff8a8a; }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 17px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main {
+  max-width: 40rem; margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+h1 { font-size: 1.6rem; margin: 0.4rem 0 0.6rem; overflow-wrap: anywhere; }
+a { color: var(--accent); }
+.back { display: inline-block; padding: 0.5rem 0; font-size: 1rem; }
+.back::before { content: "‹ "; }
+.meta, .empty { color: var(--muted); }
+label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
+.add { margin: 1rem 0; }
+.row { display: flex; gap: 0.5rem; }
+input {
+  flex: 1; min-width: 0; font: inherit; padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line); border-radius: 0.5rem; background: var(--card); color: var(--ink);
+}
+button {
+  font: inherit; font-weight: 600; padding: 0.7rem 1rem; min-height: 2.9rem;
+  border: 0; border-radius: 0.5rem; background: var(--accent); color: var(--accent-ink);
+}
+button:disabled { opacity: 0.45; }
+.export { width: 100%; margin-top: 1.2rem; }
+ul, ol { list-style: none; padding: 0; margin: 0; }
+.kits li a, .items li {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem;
+  padding: 0.85rem 0.9rem; margin-bottom: 0.5rem;
+  background: var(--card); border: 1px solid var(--line); border-radius: 0.6rem;
+}
+.kits li a { color: inherit; text-decoration: none; }
+.name, .serial { overflow-wrap: anywhere; min-width: 0; }
+.name { font-weight: 600; }
+.serial { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.count, .items time { color: var(--muted); white-space: nowrap; font-size: 0.9rem; }
+.items li { flex-wrap: wrap; }
+.error { color: var(--error); font-weight: 600; }
+.hidden { display: none; }
