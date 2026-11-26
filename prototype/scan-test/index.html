@@ -94,7 +94,7 @@
 <body>
 <main>
   <header style="display:grid;gap:6px">
-    <span class="tag">Prototype · test only · v2</span>
+    <span class="tag">Prototype · test only · v3</span>
     <h1>Scan Test</h1>
     <p>Point the camera at your real equipment labels. This page answers two questions before we build the app: <b>do your labels scan reliably on this phone</b>, and <b>what do they actually contain</b>? Nothing is saved: reloading the page clears the list.</p>
   </header>
@@ -124,6 +124,7 @@
       </label>
       <label class="field">Camera
         <select id="camera"></select>
+        <span id="camerahint" hidden>If labels look blurry up close, pick the one marked "best for close-ups".</span>
       </label>
       <label class="field" style="grid-column:1/-1;flex-direction:row;display:flex;gap:8px;align-items:center;color:var(--fg)">
         <input type="checkbox" id="auto" checked> Take still shots automatically while nothing reads
@@ -292,7 +293,7 @@ const state = {
 };
 const diag = {
   "ZXing reader": "loading…", "Phone's built-in reader": "checking…", "Video size": "-", "Camera": "-",
-  "Frames tried": 0, "Still shots": 0, "Last read time": "-", "Last strategy": "-", "Avg read time": "-", "Last error": "none",
+  "Camera attempts": "-", "Frames tried": 0, "Still shots": 0, "Last read time": "-", "Last strategy": "-", "Avg read time": "-", "Last error": "none",
 };
 let readTimes = [], frameCount = 0;
 
@@ -461,27 +462,63 @@ function announce(hit, how) {
 }
 
 // ---- Live camera ----
-function pickDefaultCamera(devices) {
-  // iPhones with several back lenses list virtual cameras that switch to the
-  // close-up (macro) lens on their own; prefer those. Otherwise avoid ultra-wide.
-  const back = devices.filter((d) => /back|rear|environment|trás|arrière/i.test(d.label));
-  const pool = back.length ? back : devices;
-  return pool.find((d) => /triple/i.test(d.label)) || pool.find((d) => /dual wide/i.test(d.label))
-    || pool.find((d) => !/ultra|wide|tele/i.test(d.label)) || pool[0];
+/** iPhones with several back lenses list "virtual" cameras that switch to the close-up lens on their own. */
+function closeUpCamera(devices) {
+  return devices.find((d) => /triple/i.test(d.label)) || devices.find((d) => /dual wide/i.test(d.label)) || null;
 }
 
 async function listCameras() {
-  const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+  let devices = [];
+  try { devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput"); }
+  catch (e) { noteError("list cameras", e); }
+  const closeUp = closeUpCamera(devices);
   const sel = $("camera"); sel.replaceChildren();
-  devices.forEach((d, i) => { const o = document.createElement("option"); o.value = d.deviceId; o.textContent = d.label || `Camera ${i + 1}`; sel.append(o); });
+  devices.forEach((d, i) => {
+    const o = document.createElement("option"); o.value = d.deviceId;
+    o.textContent = (d.label || `Camera ${i + 1}`) + (closeUp && d.deviceId === closeUp.deviceId ? " (best for close-ups)" : "");
+    sel.append(o);
+  });
+  $("camerahint").hidden = !closeUp;
   return devices;
 }
 
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Open the camera, falling back to simpler requests if a phone refuses one.
+ * Permission refusals stop at once; other failures (camera busy, settings not
+ * supported) move on to the next, simpler request after a short pause.
+ */
 async function openStream(deviceId) {
-  const video = deviceId
-    ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
-    : { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } };
-  return navigator.mediaDevices.getUserMedia({ audio: false, video });
+  const attempts = [];
+  if (deviceId) attempts.push(["chosen camera", { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }]);
+  attempts.push(["back camera, high resolution", { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }]);
+  attempts.push(["back camera", { facingMode: "environment" }]);
+  attempts.push(["any camera", true]);
+  const log = [];
+  let lastErr;
+  for (const [label, video] of attempts) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video });
+      log.push(label + ": ok"); diag["Camera attempts"] = log.join(" · ");
+      return stream;
+    } catch (e) {
+      lastErr = e; log.push(`${label}: ${e.name}`); diag["Camera attempts"] = log.join(" · ");
+      if (e.name === "NotAllowedError" || e.name === "SecurityError") break;
+      await wait(400);
+    }
+  }
+  throw lastErr;
+}
+
+function cameraFailed(e) {
+  noteError("camera", e); renderDiag();
+  const notice = $("camnotice");
+  notice.textContent = e.name === "NotAllowedError"
+    ? "Camera permission was refused. Allow the camera for this site in your browser settings (on iPhone: Settings, Safari, Camera), then tap Start camera again."
+    : `The camera didn't start. The phone said: ${e.name}${e.message ? " (" + e.message + ")" : ""}. Close any other app or tab using the camera and tap Start camera again. Please also tap Copy results below and send them to me.`;
+  notice.hidden = false;
+  $("diagbox").open = true;
 }
 
 async function startCamera() {
@@ -494,24 +531,11 @@ async function startCamera() {
   }
   try {
     state.stream = await openStream(state.deviceId);
-    // Now that permission is granted, camera names are visible: switch to the best back camera.
-    const devices = await listCameras();
-    if (!state.deviceId) {
-      const best = pickDefaultCamera(devices);
-      const current = state.stream.getVideoTracks()[0].getSettings().deviceId;
-      if (best && best.deviceId && best.deviceId !== current) {
-        state.stream.getTracks().forEach((t) => t.stop());
-        state.stream = await openStream(best.deviceId);
-      }
-    }
-  } catch (e) {
-    noteError("camera", e); renderDiag();
-    notice.textContent = e.name === "NotAllowedError"
-      ? "Camera permission was refused. Allow the camera for this site in your browser settings, then tap Start camera again. \"Take a photo\" below works without it."
-      : `The camera didn't start (${e.name}). "Take a photo" below still works.`;
-    notice.hidden = false; state.stream = null; return;
-  }
-  await attachTrack();
+  } catch (e) { state.stream = null; cameraFailed(e); return; }
+  // Camera names are only visible once permission is granted; fill the picker now.
+  // (No automatic switching: reopening the camera straight away fails on many phones.)
+  await listCameras();
+  try { await attachTrack(); } catch (e) { noteError("camera setup", e); }
   $("start").textContent = "Stop camera";
   $("capture").hidden = false; $("controls").hidden = false; $("viewer").hidden = false;
   try { state.wake = await navigator.wakeLock?.request("screen"); } catch {}
@@ -551,8 +575,11 @@ async function switchCamera(id) {
   if (!state.stream) { state.deviceId = id; return; }
   state.scanning = false;
   state.stream.getTracks().forEach((t) => t.stop());
+  $("video").srcObject = null;
+  await wait(500); // give the phone a moment to release the camera
   try { state.stream = await openStream(id); state.deviceId = id; await attachTrack(); }
-  catch (e) { noteError("switch camera", e); renderDiag(); }
+  catch (e) { stopCamera(); cameraFailed(e); return; }
+  $("camnotice").hidden = true;
   state.scanning = true; scanLoop();
 }
 
@@ -656,7 +683,7 @@ async function readPhoto(file) {
 // ---- Report ----
 function report() {
   const d = device();
-  const lines = ["SCAN TEST RESULTS (v2)", `Phone: ${d.os} · ${d.browser}`, `Readings: ${state.reads.length}`, ""];
+  const lines = ["SCAN TEST RESULTS (v3)", `Phone: ${d.os} · ${d.browser}`, `Readings: ${state.reads.length}`, ""];
   [...state.reads].reverse().forEach((r, i) => {
     lines.push(`${i + 1}. [${r.name}] ${JSON.stringify(r.raw)}`,
       `   ${r.how} (${r.method}) · ${r.at.toLocaleTimeString()}${r.note ? " · Note: " + r.note : ""}`);
