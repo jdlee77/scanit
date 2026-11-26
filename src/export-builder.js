@@ -2,6 +2,7 @@
 // then encodes that content as .xlsx bytes. Runs offline in the browser and in Node.
 // The only library is fflate (vendored), which zips the parts; the workbook XML is written here.
 import { zipSync, strToU8 } from "../vendor/fflate-0.8.3.js";
+import { dateStamp } from "./files.js";
 
 export const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const SUMMARY = "Summary";
@@ -20,9 +21,13 @@ export function buildExport(record) {
     name: names[0],
     rows: [["Kit name", "Created", "Item count"], ...kits.map(k => [k.name, new Date(k.createdAt), k.items.length])],
   };
+  const fields = record.fields();
   const kitSheets = kits.map((kit, i) => ({
     name: names[i + 1],
-    rows: [["Serial", "Scanned at"], ...kit.items.map(item => [item.serial, new Date(item.scannedAt)])],
+    rows: [
+      ["Serial", ...fields.map(f => f.name), "Scanned at"],
+      ...kit.items.map(item => [item.serial, ...fields.map(f => item.values?.[f.id] ?? ""), new Date(item.scannedAt)]),
+    ],
   }));
   return { sheets: [summary, ...kitSheets] };
 }
@@ -51,10 +56,7 @@ function cleanSheetName(name) {
 }
 
 /** File name for an Export made on the given (local) date, e.g. scanit-2026-11-26.xlsx. */
-export function exportFileName(date) {
-  const pad = n => String(n).padStart(2, "0");
-  return `scanit-${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}.xlsx`;
-}
+export const exportFileName = date => `scanit-${dateStamp(date)}.xlsx`;
 
 // ---- .xlsx encoding -------------------------------------------------------
 
@@ -88,7 +90,8 @@ function worksheet({ rows }, strings) {
   const rowXml = rows.map((row, r) => {
     const cells = row.map((value, c) => {
       widths[c] = Math.max(widths[c] ?? 8, displayLength(value));
-      return cell(`${columnLetter(c)}${r + 1}`, value, r === 0, strings);
+      // A blank stays a truly empty cell, so Excel's filters see it as blank.
+      return value === "" || value == null ? "" : cell(`${columnLetter(c)}${r + 1}`, value, r === 0, strings);
     }).join("");
     return `<row r="${r + 1}">${cells}</row>`;
   }).join("");

@@ -5,16 +5,19 @@ import { openStore } from "./store.js";
 import { buildExport, encodeXlsx, exportFileName, XLSX_TYPE } from "./export-builder.js";
 import { createScanner } from "./scanner.js";
 import { formatName, isProductCode } from "./scan-reading.js";
-import { el } from "./dom.js";
+import { settingsScreen } from "./settings-screen.js";
+import { downloadFile } from "./files.js";
+import { el, messageLine, plural } from "./dom.js";
 
 const main = document.querySelector("main");
 
 let store;
 let record;
 let scanner;
-// While scanning inside a Kit: { kitId, pendingRead }, where pendingRead is the read
-// ({ format, raw, at }) waiting in the Item form, if any.
-let scanning = null;
+// While adding Items to a Kit: { kitId, by: "scan" | "typing", pending }. pending is the
+// Serial waiting in the Item form ({ raw, format, at } for a read; { raw: "" } when typing),
+// or null while the camera is looking.
+let adding = null;
 
 start();
 
@@ -29,23 +32,28 @@ async function start() {
     console.error(error);
     return;
   }
-  scanner = createScanner({ onRead: read => { scanning.pendingRead = read; render(); } });
-  addEventListener("hashchange", () => { stopScanning(); render(); });
+  scanner = createScanner({ onRead: read => { adding.pending = read; render(); } });
+  addEventListener("hashchange", () => { stopAdding(); render(); });
   // Don't leave the camera running when the phone switches to another app.
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden && scanning) { scanner.stop(); if (!scanning.pendingRead) stopScanning(); render(); }
+    if (!document.hidden || adding?.by !== "scan") return;
+    scanner.stop();
+    if (!adding.pending) stopAdding();
+    render();
   });
   render();
 }
 
 // ---- Screens ---------------------------------------------------------------
 
+/** Draw the screen for the current address. message: an error to show, or { notice }. */
 function render(message) {
   const kitId = location.hash.match(/^#kit\/(.+)$/)?.[1];
   const kit = kitId && record.kit(decodeURIComponent(kitId));
-  const screen = !kit ? kitListScreen(message)
-    : scanning?.kitId !== kit.id ? kitScreen(kit, message)
-    : scanning.pendingRead ? itemFormScreen(kit, scanning.pendingRead, message)
+  const screen = location.hash === "#settings" ? settingsScreen({ record, save, render, message })
+    : !kit ? kitListScreen(message)
+    : adding?.kitId !== kit.id ? kitScreen(kit, message)
+    : adding.pending ? itemFormScreen(kit, adding.pending, message)
     : scanScreen(kit);
   main.replaceChildren(...screen);
   main.querySelector("[autofocus]")?.focus();
@@ -73,54 +81,46 @@ function kitListScreen(message) {
 
   const exportButton = el("button", { type: "button", class: "export" }, "Export");
   exportButton.disabled = kits.length === 0;
-  exportButton.addEventListener("click", exportAll);
+  exportButton.addEventListener("click", () =>
+    downloadFile(encodeXlsx(buildExport(record)), exportFileName(new Date()), XLSX_TYPE));
 
-  return [el("h1", {}, "Kits"), alertLine(message), form, list, exportButton];
+  return [
+    el("nav", { class: "top" }, el("a", { href: "#settings" }, "Settings")),
+    el("h1", {}, "Kits"), messageLine(message), form, list, exportButton,
+  ];
 }
 
 function kitScreen(kit, message) {
   const scanButton = el("button", { type: "button", class: "scan" }, "Scan");
   scanButton.addEventListener("click", () => {
-    scanning = { kitId: kit.id, pendingRead: null };
+    adding = { kitId: kit.id, by: "scan", pending: null };
     render();
     scanner.scan();
   });
-
-  const serialInput = el("input", {
-    id: "serial", name: "serial", autocomplete: "off", autocapitalize: "characters",
-    spellcheck: "false", enterkeyhint: "done",
-  });
-  const form = el("form", { class: "add" },
-    el("label", { for: "serial" }, "Serial"),
-    el("div", { class: "row" }, serialInput, el("button", { type: "submit" }, "Save")));
-  form.addEventListener("submit", async event => {
-    event.preventDefault();
-    const result = record.addItem(kit.id, serialInput.value, new Date().toISOString());
-    if (result.outcome === REFUSED) return render(result.reason);
-    if (await save()) { render(); main.querySelector("#serial").focus(); }
-  });
+  const typeButton = el("button", { type: "button", class: "secondary wide" }, "Type a Serial");
+  typeButton.addEventListener("click", () => startTyping(kit.id));
 
   const items = kit.items.length
     ? el("ol", { class: "items" }, ...kit.items.map(item => el("li", {},
       el("span", { class: "serial" }, item.serial),
       el("span", { class: "when" }, item.format ? formatName(item.format) : "Typed in", " · ",
         el("time", { datetime: item.scannedAt }, formatDateTime(item.scannedAt))))))
-    : el("p", { class: "empty" }, "No Items yet. Scan one, or type a Serial in and Save.");
+    : el("p", { class: "empty" }, "No Items yet. Scan one, or type a Serial in.");
 
   return [
     el("a", { href: "#", class: "back" }, "All Kits"),
     el("h1", {}, kit.name),
     el("p", { class: "meta" }, `Created ${formatDate(kit.createdAt)} · ${plural(kit.items.length, "Item")}`),
-    alertLine(message),
+    messageLine(message),
     scanButton,
-    form,
+    typeButton,
     items,
   ];
 }
 
 function scanScreen(kit) {
   const back = el("button", { type: "button", class: "secondary" }, "Back to Kit");
-  back.addEventListener("click", () => { stopScanning(); render(); });
+  back.addEventListener("click", () => { stopAdding(); render(); });
   return [
     el("p", { class: "meta" }, `Kit: ${kit.name}`),
     el("h1", {}, "Scan Items"),
@@ -129,59 +129,102 @@ function scanScreen(kit) {
   ];
 }
 
-function itemFormScreen(kit, read, message) {
+function itemFormScreen(kit, pending, message) {
+  const typing = adding.by === "typing";
   const serialBox = el("textarea", {
-    id: "item-serial", rows: String(Math.min(8, read.raw.split("\n").length + 1)),
-    autocomplete: "off", autocapitalize: "characters", spellcheck: "false",
+    id: "item-serial", rows: String(Math.min(8, pending.raw.split("\n").length + 1)),
+    autocomplete: "off", autocapitalize: "characters", spellcheck: "false", ...(typing && { autofocus: "" }),
   });
-  serialBox.value = read.raw;
-  const product = isProductCode(read.format) && el("p", { class: "note" },
-    `This ${formatName(read.format)} is probably a product code, not a serial number: every unit of a product `
+  serialBox.value = pending.raw;
+  const product = isProductCode(pending.format) && el("p", { class: "note" },
+    `This ${formatName(pending.format)} is probably a product code, not a serial number: every unit of a product `
     + "has the same one. If the label also has a serial number, scan or type that instead.");
 
-  const saveAndNext = el("button", { type: "submit" }, "Save & scan next");
+  const start = adding.values ?? record.startingValues(kit.id);
+  const fieldInputs = record.fields().map(field => fieldInput(field, start[field.id] ?? ""));
+
+  const saveAndNext = el("button", { type: "submit" }, typing ? "Save & type next" : "Save & scan next");
   const saveOnly = el("button", { type: "button", class: "secondary" }, "Save");
-  const backToCamera = el("button", { type: "button", class: "secondary" }, "Back to camera");
+  const leave = el("button", { type: "button", class: "secondary" }, typing ? "Cancel" : "Back to camera");
   const form = el("form", { class: "item-form" },
     el("label", { for: "item-serial" }, "Serial"), serialBox,
-    el("div", { class: "buttons" }, saveAndNext, saveOnly, backToCamera));
+    ...fieldInputs.map(f => f.element),
+    el("div", { class: "buttons" }, saveAndNext, saveOnly, leave));
 
-  async function saveItem(thenScan) {
+  const typedValues = () => Object.fromEntries(fieldInputs.map(f => [f.fieldId, f.input.value]));
+
+  async function saveItem(thenNext) {
     // Keep the code format only if the Serial still comes from what was read (e.g. a trimmed prefix);
     // a Serial replaced by hand counts as typed in.
     const serial = serialBox.value.trim();
-    const format = serial && read.raw.includes(serial) ? read.format : undefined;
-    const result = record.addItem(kit.id, serial, read.at, { format });
-    if (result.outcome === REFUSED) return render(result.reason);
+    const format = serial && pending.format && pending.raw.includes(serial) ? pending.format : undefined;
+    const result = record.addItem(kit.id, serial, pending.at ?? new Date().toISOString(),
+      { format, values: typedValues() });
+    if (result.outcome === REFUSED) {
+      adding.values = typedValues(); // keep what was typed while showing the message
+      return render(result.reason);
+    }
+    adding.values = null;
     if (!(await save())) return;
-    if (thenScan) return resumeScanning();
-    stopScanning();
-    render();
+    if (!thenNext) { stopAdding(); return render(); }
+    if (typing) return startTyping(kit.id);
+    resumeScanning();
   }
   form.addEventListener("submit", event => { event.preventDefault(); saveItem(true); });
   saveOnly.addEventListener("click", () => saveItem(false));
-  backToCamera.addEventListener("click", resumeScanning);
+  leave.addEventListener("click", () => {
+    adding.values = null;
+    if (typing) { stopAdding(); render(); } else resumeScanning();
+  });
 
   return [
     el("p", { class: "meta" }, `Kit: ${kit.name}`),
     el("h1", {}, "New Item"),
-    el("p", { class: "meta" }, `Read from ${withArticle(formatName(read.format))}`),
-    alertLine(message),
+    pending.format ? el("p", { class: "meta" }, `Read from ${withArticle(formatName(pending.format))}`) : "",
+    messageLine(message),
     product || "",
     form,
   ];
 }
 
+/**
+ * One Field on the Item form: a text box with its Pick list below as choices to tap,
+ * in alphabetical order, narrowed to those matching what's typed.
+ */
+function fieldInput(field, value) {
+  const id = `field-${field.id}`;
+  const input = el("input", { id, autocomplete: "off", enterkeyhint: "next" });
+  input.value = value;
+  const choices = el("div", { class: "choices", role: "group", "aria-label": `${field.name} choices` });
+  function showChoices() {
+    const typed = input.value.trim().toLocaleLowerCase();
+    const matching = field.picks.filter(p => p.toLocaleLowerCase().includes(typed) && p.toLocaleLowerCase() !== typed);
+    choices.replaceChildren(...matching.map(pick => {
+      const button = el("button", { type: "button", class: "choice" }, pick);
+      button.addEventListener("click", () => { input.value = pick; showChoices(); });
+      return button;
+    }));
+  }
+  input.addEventListener("input", showChoices);
+  showChoices();
+  return { fieldId: field.id, input, element: el("div", { class: "field-input" }, el("label", { for: id }, field.name), input, choices) };
+}
+
 // ---- Actions ---------------------------------------------------------------
 
+function startTyping(kitId) {
+  adding = { kitId, by: "typing", pending: { raw: "" } };
+  render();
+}
+
 function resumeScanning() {
-  scanning.pendingRead = null;
+  adding.pending = null;
   render();
   scanner.scan();
 }
 
-function stopScanning() {
-  scanning = null;
+function stopAdding() {
+  adding = null;
   scanner?.stop();
 }
 
@@ -196,26 +239,11 @@ async function save() {
   }
 }
 
-function exportAll() {
-  const bytes = encodeXlsx(buildExport(record));
-  const url = URL.createObjectURL(new Blob([bytes], { type: XLSX_TYPE }));
-  const link = el("a", { href: url, download: exportFileName(new Date()) });
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-}
-
 // ---- Helpers ---------------------------------------------------------------
-
-function alertLine(message) {
-  return el("p", { role: "alert", class: message ? "error" : "error hidden" }, message ?? "");
-}
 
 // "a Code 128", "an EAN-13" (UPC is said "you-pee-see", so it takes "a").
 const withArticle = name => `${/^[AEIO]/i.test(name) ? "an" : "a"} ${name}`;
 const kitLink = kit => `#kit/${encodeURIComponent(kit.id)}`;
-const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const DATE = { year: "numeric", month: "short", day: "numeric" };
 const formatDate = iso => new Date(iso).toLocaleDateString(undefined, DATE);
 const formatDateTime = iso => new Date(iso).toLocaleString(undefined, { ...DATE, hour: "numeric", minute: "2-digit" });

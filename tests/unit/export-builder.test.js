@@ -113,3 +113,34 @@ test("the code format an Item was read from isn't exported", () => {
     ["K9P2207731", new Date("2026-11-26T17:05:00.000Z")],
   ]);
 });
+
+test("a Kit sheet has a column per Field in Settings order, between Serial and Scanned at", () => {
+  const record = new KitRecord();
+  const make = record.addField("Make").field.id;
+  const model = record.addField("Model").field.id;
+  const condition = record.addField("Condition").field.id;
+  record.moveField(condition, 0);
+  const { kit } = record.createKit("Radios", "2026-11-20T16:00:00.000Z");
+  record.addItem(kit.id, "SN-1", "2026-11-26T17:05:00.000Z", { values: { [make]: "Motorola", [model]: "APX 6000" } });
+  record.addItem(kit.id, "SN-2", "2026-11-26T17:06:00.000Z", { values: { [condition]: "Good" } });
+  assert.deepEqual(buildExport(record).sheets[1].rows, [
+    ["Serial", "Condition", "Make", "Model", "Scanned at"],
+    ["SN-1", "", "Motorola", "APX 6000", new Date("2026-11-26T17:05:00.000Z")],
+    ["SN-2", "Good", "", "", new Date("2026-11-26T17:06:00.000Z")],
+  ]);
+});
+
+test("blank Field values are empty cells in the workbook", async () => {
+  const record = new KitRecord();
+  const make = record.addField("Make").field.id;
+  record.addField("Model");
+  const { kit } = record.createKit("Radios", "2026-11-20T16:00:00.000Z");
+  record.addItem(kit.id, "SN-1", "2026-11-26T17:05:00.000Z", { values: { [make]: "Motorola" } });
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(encodeXlsx(buildExport(record)));
+  const sheet = book.getWorksheet("Radios");
+  assert.deepEqual(sheet.getRow(1).values.slice(1), ["Serial", "Make", "Model", "Scanned at"]);
+  assert.equal(sheet.getCell("B2").value, "Motorola");
+  assert.equal(sheet.getCell("C2").value, null);
+  assert.deepEqual(sheet.getCell("D2").value, new Date("2026-11-26T17:05:00.000Z"));
+});

@@ -117,8 +117,9 @@ test("a camera that won't start says what to do", async ({ page }) => {
 test("typing a Serial in still works from the Kit", async ({ page }) => {
   await page.goto("/");
   await createKit(page, "Typed");
+  await page.getByRole("button", { name: "Type a Serial" }).click();
   await serialBox(page).fill("HAND-TYPED-1");
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("listitem")).toHaveCount(1);
   await expect(page.getByRole("listitem").first()).toContainText("Typed in");
 });

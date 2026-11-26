@@ -15,9 +15,10 @@ async function createKit(page, name) {
 }
 
 async function addSerial(page, serial) {
+  await page.getByRole("button", { name: "Type a Serial" }).click();
   await page.getByLabel("Serial").fill(serial);
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByRole("listitem").filter({ hasText: serial })).toBeVisible();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: serial.trim() })).toBeVisible();
 }
 
 const backToKits = page => page.getByRole("link", { name: "All Kits" }).click();
@@ -33,7 +34,6 @@ test("create a Kit, type Serials in, reload, and Export a workbook", async ({ pa
   await addSerial(page, "SN-001");
   await page.clock.setFixedTime(at(9, 9));
   await addSerial(page, "  SN-002  ");
-  await expect(page.getByLabel("Serial")).toHaveValue("");
 
   await backToKits(page);
   await page.clock.setFixedTime(at(9, 20));
@@ -91,8 +91,9 @@ test("a blank Serial or Kit name is not saved", async ({ page }) => {
   await expect(page.getByText("No Kits yet")).toBeVisible();
 
   await createKit(page, "Spare Batteries");
+  await page.getByRole("button", { name: "Type a Serial" }).click();
   await page.getByLabel("Serial").fill("   ");
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Serial");
   await expect(page.getByRole("listitem")).toHaveCount(0);
 });

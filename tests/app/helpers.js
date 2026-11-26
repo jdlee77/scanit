@@ -41,3 +41,26 @@ export async function countFeedback(page) {
   });
 }
 export const readFeedback = page => page.evaluate(() => ({ ...window.__feedback }));
+
+/** Tap Export on the Kit list and open the downloaded workbook. */
+export async function exportWorkbook(page) {
+  const { default: ExcelJS } = await import("exceljs");
+  await page.goto("/#");
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export" }).click(),
+  ]);
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.readFile(await download.path());
+  return book;
+}
+
+/** A sheet's rows as arrays of cell values, blank cells as null. */
+export function sheetRows(sheet) {
+  const width = sheet.columnCount;
+  const rows = [];
+  sheet.eachRow({ includeEmpty: true }, row => {
+    rows.push(Array.from({ length: width }, (_, i) => row.getCell(i + 1).value ?? null));
+  });
+  return rows;
+}

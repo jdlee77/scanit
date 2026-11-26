@@ -15,12 +15,13 @@ Then open <http://localhost:8790> in a browser.
 ## How it's put together
 
 - `index.html`: the page.
-- `src/kit-record.js`: every rule about Kits and Items. It never touches the screen or storage, so it's easy to test.
+- `src/kit-record.js`: every rule about Kits, Items, Fields and Pick lists. It never touches the screen or storage, so it's easy to test.
 - `src/store.js`: keeps the Kit record in the browser's own storage (IndexedDB).
 - `src/export-builder.js`: turns Kits into the `.xlsx` workbook.
 - `src/scanner.js`: the camera, the code reader and the scanning controls, lifted from the scan prototype (the `prototype/scan-test` branch).
 - `src/scan-reading.js`: the scanner's rules that don't need a camera (code types, the aiming box, not reporting the same code twice), so they're easy to test.
-- `src/app.js`, `src/app.css`: the screens.
+- `src/settings-file.js`: saves your Fields and Pick lists to a Settings file and reads one back.
+- `src/app.js`, `src/settings-screen.js`, `src/app.css`, `src/dom.js`, `src/files.js`: the screens, and handing files to you.
 - `vendor/`: outside code copied into the repo so the app never needs the internet: fflate, which zips the workbook, and zxing-wasm 3.1.6, which reads barcodes and QR codes.
 
 ## Tests

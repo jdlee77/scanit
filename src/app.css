@@ -104,3 +104,30 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
 .item-form { display: grid; gap: 0.4rem; margin-top: 0.75rem; }
 .item-form .buttons { display: grid; gap: 0.5rem; margin-top: 0.6rem; }
 @media (prefers-reduced-motion: reduce) { .flash { transition: none; } }
+
+/* Fields, Pick lists and Settings */
+h2 { font-size: 1.15rem; margin: 1.6rem 0 0.4rem; }
+nav.top { display: flex; justify-content: flex-end; }
+nav.top a { padding: 0.5rem 0; }
+.wide { width: 100%; margin-bottom: 1rem; }
+.notice { color: var(--ink); background: var(--card); border-left: 4px solid var(--accent); padding: 0.6rem 0.8rem; border-radius: 0.4rem; }
+.field-input { display: grid; gap: 0.3rem; margin-top: 0.6rem; }
+.field-input input { width: 100%; }
+.choices { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.choices:empty { display: none; }
+.choice {
+  min-height: 2.4rem; padding: 0.4rem 0.8rem; font-weight: 500; border-radius: 999px;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line); overflow-wrap: anywhere;
+}
+.fields { display: grid; gap: 0.5rem; }
+.field-row { background: var(--card); border: 1px solid var(--line); border-radius: 0.6rem; padding: 0.6rem 0.8rem; }
+.field-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.small-button { min-height: 2.4rem; padding: 0.35rem 0.7rem; font-size: 0.9rem; }
+details { margin-top: 0.5rem; }
+summary { cursor: pointer; color: var(--muted); font-size: 0.95rem; padding: 0.3rem 0; }
+.picks { display: grid; gap: 0.35rem; margin-top: 0.4rem; }
+.picks li { display: flex; align-items: center; gap: 0.35rem; }
+.pick { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.file-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.file-actions .file-button { margin: 0; }
