@@ -17,7 +17,7 @@ The act of reading a UPC or QR code with the phone's camera to capture a Serial.
 _Avoid_: using "scan" to mean the Item it produced
 
 **Serial**:
-The full contents of an Item's scanned code, which the user may correct before saving.
+The full contents of the code identifying one unit of equipment, scanned or typed in, which the user may correct before saving. A UPC identifies a product rather than a unit, so it is usually not a Serial.
 _Avoid_: barcode, code, ID
 
 **Field**:
