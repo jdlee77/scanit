@@ -114,7 +114,7 @@ test("the code format an Item was read from isn't exported", () => {
   ]);
 });
 
-test("a Kit sheet has a column per Field in Settings order, between Serial and Scanned at", () => {
+test("a Kit sheet shows each Field in Settings order, between Serial and Scanned at", () => {
   const record = new KitRecord();
   const make = record.addField("Make").field.id;
   const model = record.addField("Model").field.id;

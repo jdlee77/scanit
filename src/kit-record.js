@@ -87,6 +87,13 @@ export class KitRecord {
     return this.#fields.map(f => ({ ...copy(f), picks: [...f.picks].sort(alphabetical) }));
   }
 
+  /** A Field's Pick list values to offer: those containing what's typed (any case), not one already chosen. */
+  matchingPicks(fieldId, typed) {
+    const text = cleanText(typed).toLocaleLowerCase();
+    return this.fields().find(f => f.id === fieldId).picks
+      .filter(p => p.toLocaleLowerCase().includes(text) && !sameText(p, text));
+  }
+
   addField(name) {
     const clean = cleanText(name);
     const problem = this.#fieldNameProblem(clean);

@@ -14,10 +14,19 @@ const main = document.querySelector("main");
 let store;
 let record;
 let scanner;
-// While adding Items to a Kit: { kitId, by: "scan" | "typing", pending }. pending is the
-// Serial waiting in the Item form ({ raw, format, at } for a read; { raw: "" } when typing),
-// or null while the camera is looking.
+// While adding Items to a Kit: { kitId, by: "scan" | "typing", pending, values }.
+// pending: the Serial waiting in the Item form ({ raw, format, at } for a read; { raw: "" } when
+// typing), or null while the camera is looking. values: Field values typed on a form that was
+// refused (e.g. no Serial), so they're still there when it's shown again.
 let adding = null;
+
+// How the Item form differs when scanning and when typing.
+const ADDING_BY = {
+  scan: { saveAndNext: "Save & scan next", leave: "Back to camera", focusSerial: false,
+    next: () => resumeScanning(), onLeave: () => resumeScanning() },
+  typing: { saveAndNext: "Save & type next", leave: "Cancel", focusSerial: true,
+    next: kitId => startTyping(kitId), onLeave: () => { stopAdding(); render(); } },
+};
 
 start();
 
@@ -130,10 +139,10 @@ function scanScreen(kit) {
 }
 
 function itemFormScreen(kit, pending, message) {
-  const typing = adding.by === "typing";
+  const mode = ADDING_BY[adding.by];
   const serialBox = el("textarea", {
     id: "item-serial", rows: String(Math.min(8, pending.raw.split("\n").length + 1)),
-    autocomplete: "off", autocapitalize: "characters", spellcheck: "false", ...(typing && { autofocus: "" }),
+    autocomplete: "off", autocapitalize: "characters", spellcheck: "false", ...(mode.focusSerial && { autofocus: "" }),
   });
   serialBox.value = pending.raw;
   const product = isProductCode(pending.format) && el("p", { class: "note" },
@@ -143,9 +152,9 @@ function itemFormScreen(kit, pending, message) {
   const start = adding.values ?? record.startingValues(kit.id);
   const fieldInputs = record.fields().map(field => fieldInput(field, start[field.id] ?? ""));
 
-  const saveAndNext = el("button", { type: "submit" }, typing ? "Save & type next" : "Save & scan next");
+  const saveAndNext = el("button", { type: "submit" }, mode.saveAndNext);
   const saveOnly = el("button", { type: "button", class: "secondary" }, "Save");
-  const leave = el("button", { type: "button", class: "secondary" }, typing ? "Cancel" : "Back to camera");
+  const leave = el("button", { type: "button", class: "secondary" }, mode.leave);
   const form = el("form", { class: "item-form" },
     el("label", { for: "item-serial" }, "Serial"), serialBox,
     ...fieldInputs.map(f => f.element),
@@ -167,15 +176,11 @@ function itemFormScreen(kit, pending, message) {
     adding.values = null;
     if (!(await save())) return;
     if (!thenNext) { stopAdding(); return render(); }
-    if (typing) return startTyping(kit.id);
-    resumeScanning();
+    mode.next(kit.id);
   }
   form.addEventListener("submit", event => { event.preventDefault(); saveItem(true); });
   saveOnly.addEventListener("click", () => saveItem(false));
-  leave.addEventListener("click", () => {
-    adding.values = null;
-    if (typing) { stopAdding(); render(); } else resumeScanning();
-  });
+  leave.addEventListener("click", () => { adding.values = null; mode.onLeave(); });
 
   return [
     el("p", { class: "meta" }, `Kit: ${kit.name}`),
@@ -197,9 +202,7 @@ function fieldInput(field, value) {
   input.value = value;
   const choices = el("div", { class: "choices", role: "group", "aria-label": `${field.name} choices` });
   function showChoices() {
-    const typed = input.value.trim().toLocaleLowerCase();
-    const matching = field.picks.filter(p => p.toLocaleLowerCase().includes(typed) && p.toLocaleLowerCase() !== typed);
-    choices.replaceChildren(...matching.map(pick => {
+    choices.replaceChildren(...record.matchingPicks(field.id, input.value).map(pick => {
       const button = el("button", { type: "button", class: "choice" }, pick);
       button.addEventListener("click", () => { input.value = pick; showChoices(); });
       return button;

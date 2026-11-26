@@ -28,9 +28,11 @@ test("a Settings file holds no Kits, Items or Serials", () => {
 });
 
 test("a file that isn't a scanit Settings file is turned away with a reason", () => {
-  assert.throws(() => readSettingsFile("not json at all"), /isn't a scanit Settings file/);
-  assert.throws(() => readSettingsFile(JSON.stringify({ fields: [] })), /isn't a scanit Settings file/);
-  assert.throws(() => readSettingsFile(JSON.stringify({ app: "scanit", kind: "export" })), /isn't a scanit Settings file/);
+  for (const text of ["not json at all", JSON.stringify({ fields: [] }), JSON.stringify({ app: "scanit", kind: "export" })]) {
+    const result = new KitRecord().mergeSettings(readSettingsFile(text));
+    assert.equal(result.outcome, "refused", text);
+    assert.match(result.reason, /isn't a scanit Settings file/);
+  }
 });
 
 test("the Settings file is named with the local date", () => {

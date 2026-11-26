@@ -171,3 +171,15 @@ test("a record saved before Fields existed still loads", () => {
   assert.deepEqual(back.fields(), []);
   assert.deepEqual(back.startingValues("k"), {});
 });
+
+test("the Pick list values offered narrow to those containing what's typed", () => {
+  const { record, ids: [make] } = withFields("Make");
+  const { kit } = record.createKit("K", T(0));
+  for (const [i, value] of ["Motorola", "Harris", "Kenwood", "Moto Spare"].entries()) {
+    record.addItem(kit.id, `SN-${i}`, T(1), { values: { [make]: value } });
+  }
+  assert.deepEqual(record.matchingPicks(make, ""), ["Harris", "Kenwood", "Moto Spare", "Motorola"]);
+  assert.deepEqual(record.matchingPicks(make, "mot"), ["Moto Spare", "Motorola"]);
+  assert.deepEqual(record.matchingPicks(make, " WOOD "), ["Kenwood"]);
+  assert.deepEqual(record.matchingPicks(make, "motorola"), [], "a value already chosen isn't offered again");
+});

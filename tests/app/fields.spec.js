@@ -36,7 +36,7 @@ async function typeItem(page, serial, values = {}, button = "Save") {
   else await expect(page.getByRole("listitem").filter({ hasText: serial })).toBeVisible();
 }
 
-test("set up Fields, record Items using Pick lists, and Export them as columns", async ({ page }) => {
+test("set up Fields, record Items using Pick lists, and see them in the Export", async ({ page }) => {
   await openSettings(page);
   for (const name of ["Make", "Model", "Condition"]) await addField(page, name);
   await page.getByRole("button", { name: "Move Condition up" }).click();

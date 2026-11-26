@@ -68,12 +68,10 @@ export function settingsScreen({ record, save, render, message }) {
     const file = loadInput.files[0];
     loadInput.value = "";
     if (!file) return;
-    let settings;
-    try { settings = readSettingsFile(await file.text()); } catch (error) { return render(error.message); }
-    const result = record.mergeSettings(settings);
-    if (result.outcome === REFUSED) return render(result.reason);
-    const { fields: f, values: v } = result.added;
-    change(result, `Settings loaded: added ${plural(f, "Field")} and ${plural(v, "Pick list value")}.`);
+    const result = record.mergeSettings(readSettingsFile(await file.text()));
+    const added = result.added && `Settings loaded: added ${plural(result.added.fields, "Field")} `
+      + `and ${plural(result.added.values, "Pick list value")}.`;
+    change(result, added);
   });
 
   return [
@@ -81,7 +79,7 @@ export function settingsScreen({ record, save, render, message }) {
     el("h1", {}, "Settings"),
     messageLine(message),
     el("h2", {}, "Fields"),
-    el("p", { class: "small" }, "Every Kit uses these Fields. They are columns in the Export, in this order."),
+    el("p", { class: "small" }, "Every Kit uses these Fields. Items and the Export show them in this order, after the Serial."),
     fieldList,
     addForm,
     el("h2", {}, "Settings file"),
