@@ -103,3 +103,13 @@ test("text that looks like XML or a number is kept exactly as typed", async () =
   assert.equal(sheet.getCell("A2").value, "0012345678905");
   assert.equal(sheet.getCell("A3").value, 'S/N "A" & <B>');
 });
+
+test("the code format an Item was read from isn't exported", () => {
+  const record = new KitRecord();
+  const { kit } = record.createKit("K", "2026-11-20T16:00:00.000Z");
+  record.addItem(kit.id, "K9P2207731", "2026-11-26T17:05:00.000Z", { format: "code_128" });
+  assert.deepEqual(buildExport(record).sheets[1].rows, [
+    ["Serial", "Scanned at"],
+    ["K9P2207731", new Date("2026-11-26T17:05:00.000Z")],
+  ]);
+});

@@ -52,13 +52,15 @@ export class KitRecord {
   /**
    * Add an Item to a Kit. Returns an outcome rather than throwing:
    *   { outcome: "added", item } or { outcome: "refused", reason }
+   * format: the code format the Serial was read from (kept for reference, not exported);
+   * leave it out for a typed Serial.
    */
-  addItem(kitId, serial, now) {
+  addItem(kitId, serial, now, { format } = {}) {
     const kit = this.#find(kitId);
     if (!kit) throw new Error(`No Kit with id ${kitId}`);
     const clean = cleanText(serial);
     if (!clean) return refused("A Serial is required: type one in, then Save.");
-    const item = { id: newId(), serial: clean, scannedAt: now };
+    const item = { id: newId(), serial: clean, scannedAt: now, ...(format && { format }) };
     kit.items.push(item);
     return { outcome: ADDED, item: copy(item) };
   }

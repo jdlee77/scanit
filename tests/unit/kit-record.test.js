@@ -91,3 +91,18 @@ test("reading what you were given can't change the record", () => {
   assert.equal(record.kit(kit.id).name, "K");
   assert.equal(record.kit(kit.id).items.length, 0);
 });
+
+test("an Item keeps the code format it was read from; a typed Serial has none", () => {
+  const record = new KitRecord();
+  const { kit } = record.createKit("K", T1);
+  assert.equal(record.addItem(kit.id, "K9P2207731", T2, { format: "code_128" }).item.format, "code_128");
+  assert.equal(record.addItem(kit.id, "TYPED-1", T3).item.format, undefined);
+  assert.deepEqual(record.kit(kit.id).items.map(i => i.format), ["code_128", undefined]);
+});
+
+test("line breaks inside a Serial are kept; only the ends are trimmed", () => {
+  const record = new KitRecord();
+  const { kit } = record.createKit("K", T1);
+  const { item } = record.addItem(kit.id, "\nMake: Motorola\nSerial: 475CTV1293\n ", T2, { format: "qr_code" });
+  assert.equal(item.serial, "Make: Motorola\nSerial: 475CTV1293");
+});

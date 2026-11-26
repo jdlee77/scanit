@@ -1,0 +1,82 @@
+[
+  {
+    "file": "QRCode-MX4417-22B.png",
+    "format": "QRCode",
+    "text": "MX4417-22B"
+  },
+  {
+    "file": "QRCode-SN-RX8830-0451.png",
+    "format": "QRCode",
+    "text": "SN: RX8830-0451"
+  },
+  {
+    "file": "QRCode-Make-Motorola-Model-APX-6000-Serial-475C.png",
+    "format": "QRCode",
+    "text": "Make: Motorola\nModel: APX 6000\nSerial: 475CTV1293"
+  },
+  {
+    "file": "QRCode-https-example-com-asset-EOC-LT-0042.png",
+    "format": "QRCode",
+    "text": "https://example.com/asset/EOC-LT-0042"
+  },
+  {
+    "file": "QRCode-TAG-3381.png",
+    "format": "QRCode",
+    "text": "TAG-3381"
+  },
+  {
+    "file": "QRCode-ASSET-00917.png",
+    "format": "QRCode",
+    "text": "ASSET-00917"
+  },
+  {
+    "file": "EAN13-0036000291452.png",
+    "format": "EAN13",
+    "text": "0036000291452"
+  },
+  {
+    "file": "EAN13-4006381333931.png",
+    "format": "EAN13",
+    "text": "4006381333931"
+  },
+  {
+    "file": "EAN13-0012345678905.png",
+    "format": "EAN13",
+    "text": "0012345678905"
+  },
+  {
+    "file": "EAN13-0072036600240.png",
+    "format": "EAN13",
+    "text": "0072036600240"
+  },
+  {
+    "file": "Code128-K9P2207731.png",
+    "format": "Code128",
+    "text": "K9P2207731"
+  },
+  {
+    "file": "Code128-S-N-20B4471X.png",
+    "format": "Code128",
+    "text": "S/N 20B4471X"
+  },
+  {
+    "file": "Code39-CS9921847.png",
+    "format": "Code39",
+    "text": "CS9921847"
+  },
+  {
+    "file": "Code128-LT0042.png",
+    "format": "Code128",
+    "text": "LT0042"
+  },
+  {
+    "file": "DataMatrix-EOC-RADIO-0117.png",
+    "format": "DataMatrix",
+    "text": "EOC-RADIO-0117"
+  },
+  {
+    "file": "DataMatrix-SN7731AB02.png",
+    "format": "DataMatrix",
+    "text": "SN7731AB02"
+  }
+]

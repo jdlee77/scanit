@@ -3,11 +3,16 @@
 import { KitRecord, REFUSED } from "./kit-record.js";
 import { openStore } from "./store.js";
 import { buildExport, encodeXlsx, exportFileName, XLSX_TYPE } from "./export-builder.js";
+import { createScanner } from "./scanner.js";
+import { formatName, isProductCode } from "./scan-reading.js";
 
 const main = document.querySelector("main");
 
 let store;
 let record;
+let scanner;
+// While scanning inside a Kit: { kitId, read } where read is the code waiting in the Item form, if any.
+let scanning = null;
 
 start();
 
@@ -22,7 +27,12 @@ async function start() {
     console.error(error);
     return;
   }
-  addEventListener("hashchange", () => render());
+  scanner = createScanner({ onRead: read => { scanning.read = read; render(); } });
+  addEventListener("hashchange", () => { stopScanning(); render(); });
+  // Don't leave the camera running when the phone switches to another app.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && scanning) { scanner.stop(); if (!scanning.read) stopScanning(); render(); }
+  });
   render();
 }
 
@@ -31,7 +41,11 @@ async function start() {
 function render(message) {
   const kitId = location.hash.match(/^#kit\/(.+)$/)?.[1];
   const kit = kitId && record.kit(decodeURIComponent(kitId));
-  main.replaceChildren(...(kit ? kitScreen(kit, message) : kitListScreen(message)));
+  const screen = !kit ? kitListScreen(message)
+    : scanning?.kitId !== kit.id ? kitScreen(kit, message)
+    : scanning.read ? itemFormScreen(kit, scanning.read, message)
+    : scanScreen(kit);
+  main.replaceChildren(...screen);
   main.querySelector("[autofocus]")?.focus();
 }
 
@@ -63,9 +77,16 @@ function kitListScreen(message) {
 }
 
 function kitScreen(kit, message) {
+  const scanButton = el("button", { type: "button", class: "scan" }, "Scan");
+  scanButton.addEventListener("click", () => {
+    scanning = { kitId: kit.id, read: null };
+    render();
+    scanner.scan();
+  });
+
   const serialInput = el("input", {
     id: "serial", name: "serial", autocomplete: "off", autocapitalize: "characters",
-    spellcheck: "false", enterkeyhint: "done", autofocus: "",
+    spellcheck: "false", enterkeyhint: "done",
   });
   const form = el("form", { class: "add" },
     el("label", { for: "serial" }, "Serial"),
@@ -74,26 +95,89 @@ function kitScreen(kit, message) {
     event.preventDefault();
     const result = record.addItem(kit.id, serialInput.value, new Date().toISOString());
     if (result.outcome === REFUSED) return render(result.reason);
-    if (await save()) render();
+    if (await save()) { render(); main.querySelector("#serial").focus(); }
   });
 
   const items = kit.items.length
     ? el("ol", { class: "items" }, ...kit.items.map(item => el("li", {},
       el("span", { class: "serial" }, item.serial),
-      el("time", { datetime: item.scannedAt }, formatDateTime(item.scannedAt)))))
-    : el("p", { class: "empty" }, "No Items yet. Type a Serial in and Save.");
+      el("span", { class: "when" }, item.format ? formatName(item.format) : "Typed in", " · ",
+        el("time", { datetime: item.scannedAt }, formatDateTime(item.scannedAt))))))
+    : el("p", { class: "empty" }, "No Items yet. Scan one, or type a Serial in and Save.");
 
   return [
     el("a", { href: "#", class: "back" }, "All Kits"),
     el("h1", {}, kit.name),
     el("p", { class: "meta" }, `Created ${formatDate(kit.createdAt)} · ${plural(kit.items.length, "Item")}`),
     alertLine(message),
+    scanButton,
     form,
     items,
   ];
 }
 
+function scanScreen(kit) {
+  const back = el("button", { type: "button", class: "secondary" }, "Back to Kit");
+  back.addEventListener("click", () => { stopScanning(); render(); });
+  return [
+    el("p", { class: "meta" }, `Kit: ${kit.name}`),
+    el("h1", {}, "Scan Items"),
+    scanner.element,
+    back,
+  ];
+}
+
+function itemFormScreen(kit, read, message) {
+  const serialBox = el("textarea", {
+    id: "item-serial", rows: String(Math.min(8, read.raw.split("\n").length + 1)),
+    autocomplete: "off", autocapitalize: "characters", spellcheck: "false",
+  });
+  serialBox.value = read.raw;
+  const product = isProductCode(read.format) && el("p", { class: "note" },
+    `This ${formatName(read.format)} is probably a product code, not a serial number: every unit of a product `
+    + "has the same one. If the label also has a serial number, scan or type that instead.");
+
+  const saveAndNext = el("button", { type: "submit" }, "Save & scan next");
+  const saveOnly = el("button", { type: "button", class: "secondary" }, "Save");
+  const backToCamera = el("button", { type: "button", class: "secondary" }, "Back to camera");
+  const form = el("form", { class: "item-form" },
+    el("label", { for: "item-serial" }, "Serial"), serialBox,
+    el("div", { class: "buttons" }, saveAndNext, saveOnly, backToCamera));
+
+  async function saveItem(thenScan) {
+    const result = record.addItem(kit.id, serialBox.value, new Date().toISOString(), { format: read.format });
+    if (result.outcome === REFUSED) return render(result.reason);
+    if (!(await save())) return;
+    if (thenScan) return resumeScanning();
+    stopScanning();
+    render();
+  }
+  form.addEventListener("submit", event => { event.preventDefault(); saveItem(true); });
+  saveOnly.addEventListener("click", () => saveItem(false));
+  backToCamera.addEventListener("click", resumeScanning);
+
+  return [
+    el("p", { class: "meta" }, `Kit: ${kit.name}`),
+    el("h1", {}, "New Item"),
+    el("p", { class: "meta" }, `Read from ${withArticle(formatName(read.format))}`),
+    alertLine(message),
+    product || "",
+    form,
+  ];
+}
+
 // ---- Actions ---------------------------------------------------------------
+
+function resumeScanning() {
+  scanning.read = null;
+  render();
+  scanner.scan();
+}
+
+function stopScanning() {
+  scanning = null;
+  scanner?.stop();
+}
 
 async function save() {
   try {
@@ -122,6 +206,8 @@ function alertLine(message) {
   return el("p", { role: "alert", class: message ? "error" : "error hidden" }, message ?? "");
 }
 
+// "a Code 128", "an EAN-13" (UPC is said "you-pee-see", so it takes "a").
+const withArticle = name => `${/^[AEIO]/i.test(name) ? "an" : "a"} ${name}`;
 const kitLink = kit => `#kit/${encodeURIComponent(kit.id)}`;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const DATE = { year: "numeric", month: "short", day: "numeric" };
