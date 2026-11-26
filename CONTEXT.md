@@ -5,7 +5,7 @@ A phone-based tool for recording the equipment in a Kit by scanning each Item's 
 ## Language
 
 **Kit**:
-A named group of Items recorded together, such as "Radio Cache 3". A Kit stays open for changes until it is deleted.
+A named group of Items recorded together, such as "Radio Cache 3", with optional Notes. A Kit stays open for changes until it is deleted.
 _Avoid_: group, set, batch
 
 **Item**:
@@ -32,5 +32,5 @@ _Avoid_: dropdown, options
 The Fields and their Pick lists. Settings can be saved to and loaded from a Settings file; Kits are not part of Settings.
 
 **Export**:
-An Excel workbook holding one sheet per Kit. The Export is the only copy of Kit data that exists off the phone.
+An Excel workbook holding a Summary sheet listing the included Kits, then one sheet per Kit. The Export is the only copy of Kit data that exists off the phone.
 _Avoid_: backup, report
