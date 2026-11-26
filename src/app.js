@@ -5,13 +5,15 @@ import { openStore } from "./store.js";
 import { buildExport, encodeXlsx, exportFileName, XLSX_TYPE } from "./export-builder.js";
 import { createScanner } from "./scanner.js";
 import { formatName, isProductCode } from "./scan-reading.js";
+import { el } from "./dom.js";
 
 const main = document.querySelector("main");
 
 let store;
 let record;
 let scanner;
-// While scanning inside a Kit: { kitId, read } where read is the code waiting in the Item form, if any.
+// While scanning inside a Kit: { kitId, pendingRead }, where pendingRead is the read
+// ({ format, raw, at }) waiting in the Item form, if any.
 let scanning = null;
 
 start();
@@ -27,11 +29,11 @@ async function start() {
     console.error(error);
     return;
   }
-  scanner = createScanner({ onRead: read => { scanning.read = read; render(); } });
+  scanner = createScanner({ onRead: read => { scanning.pendingRead = read; render(); } });
   addEventListener("hashchange", () => { stopScanning(); render(); });
   // Don't leave the camera running when the phone switches to another app.
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden && scanning) { scanner.stop(); if (!scanning.read) stopScanning(); render(); }
+    if (document.hidden && scanning) { scanner.stop(); if (!scanning.pendingRead) stopScanning(); render(); }
   });
   render();
 }
@@ -43,7 +45,7 @@ function render(message) {
   const kit = kitId && record.kit(decodeURIComponent(kitId));
   const screen = !kit ? kitListScreen(message)
     : scanning?.kitId !== kit.id ? kitScreen(kit, message)
-    : scanning.read ? itemFormScreen(kit, scanning.read, message)
+    : scanning.pendingRead ? itemFormScreen(kit, scanning.pendingRead, message)
     : scanScreen(kit);
   main.replaceChildren(...screen);
   main.querySelector("[autofocus]")?.focus();
@@ -79,7 +81,7 @@ function kitListScreen(message) {
 function kitScreen(kit, message) {
   const scanButton = el("button", { type: "button", class: "scan" }, "Scan");
   scanButton.addEventListener("click", () => {
-    scanning = { kitId: kit.id, read: null };
+    scanning = { kitId: kit.id, pendingRead: null };
     render();
     scanner.scan();
   });
@@ -145,7 +147,11 @@ function itemFormScreen(kit, read, message) {
     el("div", { class: "buttons" }, saveAndNext, saveOnly, backToCamera));
 
   async function saveItem(thenScan) {
-    const result = record.addItem(kit.id, serialBox.value, new Date().toISOString(), { format: read.format });
+    // Keep the code format only if the Serial still comes from what was read (e.g. a trimmed prefix);
+    // a Serial replaced by hand counts as typed in.
+    const serial = serialBox.value.trim();
+    const format = serial && read.raw.includes(serial) ? read.format : undefined;
+    const result = record.addItem(kit.id, serial, read.at, { format });
     if (result.outcome === REFUSED) return render(result.reason);
     if (!(await save())) return;
     if (thenScan) return resumeScanning();
@@ -169,7 +175,7 @@ function itemFormScreen(kit, read, message) {
 // ---- Actions ---------------------------------------------------------------
 
 function resumeScanning() {
-  scanning.read = null;
+  scanning.pendingRead = null;
   render();
   scanner.scan();
 }
@@ -213,10 +219,3 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const DATE = { year: "numeric", month: "short", day: "numeric" };
 const formatDate = iso => new Date(iso).toLocaleDateString(undefined, DATE);
 const formatDateTime = iso => new Date(iso).toLocaleString(undefined, { ...DATE, hour: "numeric", minute: "2-digit" });
-
-function el(tag, attrs = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value);
-  node.append(...children);
-  return node;
-}

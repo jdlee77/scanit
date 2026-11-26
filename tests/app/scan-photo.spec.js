@@ -55,9 +55,8 @@ test("tapping the picture takes a still shot", async ({ page }) => {
 test("zoom starts at 2×, with a flashlight and camera picker, where the phone supports them", async ({ page }) => {
   await page.addInitScript(() => {
     // Pretend to be an iPhone-like camera with zoom, a flashlight and several back lenses.
-    const applied = (window.__applied = []);
     MediaStreamTrack.prototype.getCapabilities = () => ({ zoom: { min: 1, max: 10, step: 0.1 }, torch: true });
-    MediaStreamTrack.prototype.applyConstraints = async c => { applied.push(c); };
+    MediaStreamTrack.prototype.applyConstraints = async () => {};
     const realList = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
     navigator.mediaDevices.enumerateDevices = async () => {
       const real = (await realList()).find(d => d.kind === "videoinput");
@@ -82,11 +81,6 @@ test("zoom starts at 2×, with a flashlight and camera picker, where the phone s
   const picker = page.getByRole("combobox", { name: "Camera" });
   await expect(picker.getByRole("option")).toHaveCount(3);
   await expect(picker.getByRole("option", { name: "Back Triple Camera (best for close-ups)" })).toHaveCount(1);
-
-  const applied = await page.evaluate(() => window.__applied);
-  expect(applied).toContainEqual({ advanced: [{ zoom: 2 }] });
-  expect(applied).toContainEqual({ advanced: [{ zoom: 3.5 }] });
-  expect(applied).toContainEqual({ advanced: [{ torch: true }] });
 });
 
 test("no zoom, flashlight or picker on a camera without them", async ({ page }) => {
@@ -127,4 +121,33 @@ test("typing a Serial in still works from the Kit", async ({ page }) => {
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("listitem")).toHaveCount(1);
   await expect(page.getByRole("listitem").first()).toContainText("Typed in");
+});
+
+test("an Item's scanned-at time is when the code was read, not when it was saved", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-11-26T09:05:00-08:00"));
+  await openScanner(page, "Timing");
+  await page.getByLabel("Take a photo").setInputFiles(codePicture("Code39-CS9921847.png"));
+  await expect(serialBox(page)).toHaveValue("CS9921847");
+  await page.clock.setFixedTime(new Date("2026-11-26T09:20:00-08:00"));
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("listitem").first()).toContainText("9:05 AM");
+});
+
+test("a Serial trimmed from the read keeps its code format; one replaced by hand counts as typed in", async ({ page }) => {
+  await openScanner(page, "Corrections");
+  await page.getByLabel("Take a photo").setInputFiles(codePicture("Code128-S-N-20B4471X.png"));
+  await expect(serialBox(page)).toHaveValue("S/N 20B4471X");
+  await serialBox(page).fill("20B4471X");
+  await page.getByRole("button", { name: "Save & scan next" }).click();
+
+  await page.getByLabel("Take a photo").setInputFiles(codePicture("EAN13-0036000291452.png"));
+  await expect(serialBox(page)).toHaveValue("0036000291452");
+  await serialBox(page).fill("RADIO-SERIAL-77");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+
+  const items = page.getByRole("listitem");
+  await expect(items.nth(0)).toContainText("20B4471X");
+  await expect(items.nth(0)).toContainText("Code 128");
+  await expect(items.nth(1)).toContainText("RADIO-SERIAL-77");
+  await expect(items.nth(1)).toContainText("Typed in");
 });

@@ -34,8 +34,6 @@ test("a code still in view after a pause isn't reported again", () => {
   filter.isNew("A", 0);
   filter.stillSeen(20000); // e.g. back from the Item form
   assert.equal(filter.isNew("A", 21000), false);
-  filter.forget();
-  assert.equal(filter.isNew("A", 21100), true);
 });
 
 test("the aiming box maps to the matching part of the camera picture", () => {

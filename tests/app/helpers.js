@@ -30,7 +30,13 @@ export async function countFeedback(page) {
     OscillatorNode.prototype.start = function (...args) { counts.beeps++; return start.apply(this, args); };
     navigator.vibrate = () => { counts.buzzes++; return true; };
     new MutationObserver(changes => {
-      for (const c of changes) if (c.target.classList?.contains("flash") && c.target.classList.contains("on")) counts.flashes++;
+      for (const c of changes) {
+        const flash = c.target;
+        if (!flash.classList?.contains("flash") || !flash.classList.contains("on")) continue;
+        // Only count a flash a person could see: on the page, with the camera view showing.
+        const view = flash.closest(".viewer");
+        if (flash.isConnected && view && view.checkVisibility()) counts.flashes++;
+      }
     }).observe(document, { subtree: true, attributes: true, attributeFilter: ["class"] });
   });
 }

@@ -11,6 +11,7 @@
 import {
   FORMAT_IDS, STRATEGIES, RepeatFilter, aimRect, closeUpCamera, formatId, sharpen, stillShotDue,
 } from "./scan-reading.js";
+import { el } from "./dom.js";
 
 const AIM_INSET = { top: 0.25, side: 0.08 };
 const READER_OPTIONS = {
@@ -24,6 +25,7 @@ const FRAME_GAP_MS = 60;
 const PAUSE_AFTER_READ_MS = 1200;
 const CAMERA_RELEASE_MS = 500; // a phone needs a moment between closing the camera and opening it again
 const HINT = "Fit the code inside the box · tap the picture for a still shot";
+const FLASH_MS = 250; // how long the camera view stays up after a read, so the flash is seen
 
 // ---- Code reader -------------------------------------------------------------
 
@@ -109,18 +111,20 @@ async function openStream(deviceId) {
       return await navigator.mediaDevices.getUserMedia({ audio: false, video });
     } catch (error) {
       lastError = error;
-      if (error.name === "NotAllowedError" || error.name === "SecurityError") break;
+      if (isPermissionRefusal(error)) break;
       await wait(400);
     }
   }
   throw lastError;
 }
 
+const isPermissionRefusal = error => error.name === "NotAllowedError" || error.name === "SecurityError";
+
 /** What to tell the user when the camera won't start, and what to do next. */
 function cameraProblem(error) {
   const fallback = "Meanwhile you can use Take a photo below, or go back and type the Serial in.";
   if (!error) return `This browser can't open the camera from a web page. ${fallback}`;
-  if (error.name === "NotAllowedError" || error.name === "SecurityError") {
+  if (isPermissionRefusal(error)) {
     return "Camera permission was refused. To scan, allow the camera for this site: on iPhone, open Settings, "
       + "then Safari, then Camera; on Android, tap the icon beside the web address, then Permissions. "
       + `Then tap Try again. ${fallback}`;
@@ -151,8 +155,8 @@ function beep() {
 // ---- The scanner -------------------------------------------------------------
 
 /**
- * Create the scanner. onRead({ format, raw }) is called for each new read; scanning pauses
- * until scan() is called again. The scanner's controls are in scanner.element.
+ * Create the scanner. onRead({ format, raw, at }) is called for each new read (at: when it was
+ * read, as an ISO date); scanning pauses until scan() is called again. The scanner's controls are in scanner.element.
  */
 export function createScanner({ onRead }) {
   const ui = buildControls();
@@ -322,42 +326,48 @@ export function createScanner({ onRead }) {
     else if (tapped) ui.hint.textContent = "Nothing found in that still shot. Try zooming in, or moving back a little.";
   }
 
+  /** Run one reading job at a time: live frames, still shots and photos share the reader. */
+  async function exclusively(job) {
+    while (busy) await wait(50);
+    busy = true;
+    try { return await job(); } finally { busy = false; }
+  }
+
   async function tapStillShot() {
     if (!scanning) return;
     prepareSound();
-    while (busy) await wait(50);
-    busy = true;
-    try { await stillShot(true); } finally { busy = false; }
+    await exclusively(() => stillShot(true));
   }
 
   async function readPhoto(file) {
     if (!file) return;
     prepareSound();
     ui.photoStatus.textContent = "Reading the photo…";
-    while (busy) await wait(50);
-    busy = true;
-    try {
-      const photo = await createImageBitmap(file);
-      const centre = { x: photo.width * 0.1, y: photo.height * 0.1, w: photo.width * 0.8, h: photo.height * 0.8 };
-      const hit = await readCarefully({ source: photo, w: photo.width, h: photo.height, aim: centre });
-      ui.photoStatus.textContent = hit ? "" : "No code found in that photo. Try again closer and steadier, with the label flat and well lit.";
-      if (hit) report(hit, { always: true });
-    } catch {
-      ui.photoStatus.textContent = "That photo couldn't be read. Try taking it again.";
-    } finally {
-      busy = false;
-    }
+    await exclusively(async () => {
+      try {
+        const photo = await createImageBitmap(file);
+        const centre = { x: photo.width * 0.1, y: photo.height * 0.1, w: photo.width * 0.8, h: photo.height * 0.8 };
+        const hit = await readCarefully({ source: photo, w: photo.width, h: photo.height, aim: centre });
+        ui.photoStatus.textContent = hit ? "" : "No code found in that photo. Try again closer and steadier, with the label flat and well lit.";
+        if (hit) report(hit, { always: true });
+      } catch {
+        ui.photoStatus.textContent = "That photo couldn't be read. Try taking it again.";
+      }
+    });
   }
 
   function report(hit, { always = false } = {}) {
     if (!repeats.isNew(hit.raw, Date.now()) && !always) return;
     scanning = false;
     pausedUntil = Date.now() + PAUSE_AFTER_READ_MS;
+    const read = { ...hit, at: new Date().toISOString() };
     beep();
     navigator.vibrate?.(70);
     ui.flash.classList.add("on");
+    ui.aim.classList.add("hit");
     requestAnimationFrame(() => requestAnimationFrame(() => ui.flash.classList.remove("on")));
-    onRead(hit);
+    // Keep the camera view up for a moment so the flash and the green box are seen.
+    setTimeout(() => { ui.aim.classList.remove("hit"); onRead(read); }, FLASH_MS);
   }
 
   ui.viewer.addEventListener("click", tapStillShot);
@@ -370,8 +380,6 @@ export function createScanner({ onRead }) {
   return {
     element: ui.root,
     scan,
-    /** Stop reading but keep the camera open (e.g. while the Item form is showing). */
-    pause() { scanning = false; },
     /** Close the camera. */
     stop() { closeCamera(); ui.problem.hidden = true; ui.photoStatus.textContent = ""; },
   };
@@ -382,7 +390,8 @@ function buildControls() {
   video.muted = true;
   const flash = el("div", { class: "flash" });
   const hint = el("p", { class: "hint" }, HINT);
-  const viewer = el("section", { class: "viewer", "aria-label": "Camera" }, video, el("div", { class: "aim" }), hint, flash);
+  const aim = el("div", { class: "aim" });
+  const viewer = el("section", { class: "viewer", "aria-label": "Camera" }, video, aim, hint, flash);
   viewer.hidden = true;
 
   const zoom = el("input", { type: "range", min: "1", max: "4", step: "0.1", value: "1" });
@@ -408,13 +417,6 @@ function buildControls() {
     photoStatus);
 
   const root = el("div", { class: "scanner" }, problem, viewer, cameraControls, photoBlock);
-  return { root, video, flash, hint, viewer, zoom, zoomValue, zoomField, torch, camera, cameraHint, cameraField,
+  return { root, video, flash, aim, hint, viewer, zoom, zoomValue, zoomField, torch, camera, cameraHint, cameraField,
     cameraControls, problem, problemText, retry, photo, photoStatus };
-}
-
-function el(tag, attrs = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value);
-  node.append(...children);
-  return node;
 }

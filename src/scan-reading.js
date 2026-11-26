@@ -43,7 +43,6 @@ export class RepeatFilter {
   }
   /** Treat the last code as just seen (e.g. scanning resumes with it still in front of the camera). */
   stillSeen(now) { if (this.#last) this.#last.at = now; }
-  forget() { this.#last = null; }
 }
 
 export const stillShotDue = (lastReadOrStillAt, now) => now - lastReadOrStillAt > STILL_SHOT_AFTER_MS;
