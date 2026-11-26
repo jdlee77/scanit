@@ -8,6 +8,8 @@ import { formatName, isProductCode } from "./scan-reading.js";
 import { settingsScreen } from "./settings-screen.js";
 import { shareOrDownload, downloadFile, SHARED, CANCELLED, SHARE_FAILED } from "./files.js";
 import { el, messageLine, plural, question } from "./dom.js";
+import { startOffline, keepStoredData } from "./offline.js";
+import { homeScreenPrompt } from "./install-prompt.js";
 
 const main = document.querySelector("main");
 
@@ -32,6 +34,9 @@ const ADDING_BY = {
 start();
 
 async function start() {
+  // A new version waiting from an earlier visit takes over first; the page reloads by itself.
+  if (await startOffline() === "updating") return;
+  keepStoredData(); // a refusal is fine: the Export reminder still covers unsent Kits
   try {
     store = await openStore();
     record = KitRecord.fromJSON(await store.load());
@@ -111,7 +116,7 @@ function kitListScreen(message) {
 
   return [
     el("nav", { class: "top" }, el("a", { href: "#settings" }, "Settings")),
-    el("h1", {}, "Kits"), messageLine(message), reminder || "", form, list, exportButton,
+    el("h1", {}, "Kits"), messageLine(message), homeScreenPrompt(), reminder || "", form, list, exportButton,
   ];
 }
 

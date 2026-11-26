@@ -12,6 +12,20 @@ python3 -m http.server 8790
 
 Then open <http://localhost:8790> in a browser.
 
+## Working offline, and publishing a new version
+
+After the first visit, scanit opens, scans and exports with no signal. A service worker (`sw.js`) keeps a copy of every file listed in `app-files.js` on the phone. `manifest.webmanifest` and the pictures in `icons/` let people add scanit to the home screen. `icons/make-icons.py` draws those pictures.
+
+Because phones run their saved copy, **a changed file only reaches them when its version changes.** After changing any app file, run:
+
+```bash
+npm run stamp
+```
+
+This writes a new fingerprint of the files into `app-files.js`. A test fails if you forget. Phones fetch the new version in the background on their next visit and switch to it on the visit after that. Kits are kept separately, so an update never touches them.
+
+The same applies while trying changes on your computer: run `npm run stamp`, then reload the page twice.
+
 ## How it's put together
 
 - `index.html`: the page.
@@ -22,6 +36,7 @@ Then open <http://localhost:8790> in a browser.
 - `src/scan-reading.js`: the scanner's rules that don't need a camera (code types, the aiming box, not reporting the same code twice), so they're easy to test.
 - `src/settings-file.js`: saves your Fields and Pick lists to a Settings file and reads one back.
 - `src/app.js`, `src/settings-screen.js`, `src/app.css`, `src/dom.js`, `src/files.js`: the screens, and handing files to you.
+- `src/offline.js`, `src/install-prompt.js`, `sw.js`, `app-files.js`: working offline, keeping stored data, and the home-screen prompt.
 - `vendor/`: outside code copied into the repo so the app never needs the internet: fflate, which zips the workbook, and zxing-wasm 3.1.6, which reads barcodes and QR codes.
 
 ## Tests
