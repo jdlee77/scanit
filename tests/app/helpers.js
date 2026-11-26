@@ -44,7 +44,8 @@ export const readFeedback = page => page.evaluate(() => ({ ...window.__feedback 
 
 /**
  * Go from the Kit list to the Export screen, untick the Kits named in leaveOut, tap Export, and
- * return the download (Chromium here has no Share menu, so the file downloads).
+ * return the download (Chromium here has no Share menu, so the file downloads) once the app has
+ * recorded the Export.
  */
 export async function downloadExport(page, { leaveOut = [] } = {}) {
   await page.goto("/#");
@@ -55,6 +56,8 @@ export async function downloadExport(page, { leaveOut = [] } = {}) {
     page.waitForEvent("download"),
     page.getByRole("button", { name: "Export" }).click(),
   ]);
+  // Wait for the app to record the Export and go back to the Kit list, so the next step can't race it.
+  await expect(page.getByRole("status")).toContainText(`Downloaded ${download.suggestedFilename()}`);
   return download;
 }
 
