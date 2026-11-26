@@ -4,6 +4,7 @@ import { REFUSED } from "./kit-record.js";
 import { settingsFileText, readSettingsFile, settingsFileName, SETTINGS_TYPE } from "./settings-file.js";
 import { downloadFile } from "./files.js";
 import { el, messageLine, plural } from "./dom.js";
+import { madeBy } from "./tour.js";
 
 /** ctx: { record, save, render, message } from the app shell. */
 export function settingsScreen({ record, save, render, message }) {
@@ -89,5 +90,6 @@ export function settingsScreen({ record, save, render, message }) {
       "Save your Fields and Pick lists to a file, to keep a copy or load them on another phone. "
       + "Loading adds what's missing and never removes anything. Kits are not part of it."),
     el("div", { class: "file-actions" }, saveFile, el("label", { class: "file-button" }, "Load Settings file", loadInput)),
+    madeBy(),
   ];
 }

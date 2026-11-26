@@ -1,5 +1,7 @@
 # scanit
 
+By [Jon Lee](https://jon-lee.carrd.co/).
+
 A phone web app for recording the equipment in a Kit: scan (or type in) each Item's Serial, then Export everything as one Excel workbook. Everything stays on the phone (see `docs/adr/0001-no-server-data-stays-on-the-phone.md`); the Export is the only copy that leaves it. Terms such as Kit, Item and Serial are defined in `CONTEXT.md`.
 
 ## Trying it on your computer

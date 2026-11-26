@@ -10,6 +10,7 @@ import { shareOrDownload, downloadFile, SHARED, CANCELLED, SHARE_FAILED } from "
 import { el, messageLine, plural, question } from "./dom.js";
 import { startOffline, keepStoredData, UPDATING } from "./offline.js";
 import { homeScreenPrompt } from "./install-prompt.js";
+import { tourScreen, tourOffer, madeBy } from "./tour.js";
 
 const main = document.querySelector("main");
 
@@ -70,7 +71,9 @@ function render(message) {
   const [, kitId, page, itemId] = location.hash.match(/^#kit\/([^/]+)(?:\/(details|item)(?:\/([^/]+))?)?$/) ?? [];
   const kit = kitId && record.kit(decodeURIComponent(kitId));
   const item = kit && page === "item" && record.item(kit.id, decodeURIComponent(itemId ?? ""));
-  const screen = location.hash === "#settings" ? settingsScreen({ record, save, render, message })
+  const tourStep = location.hash.match(/^#help(?:\/(\d+))?$/);
+  const screen = tourStep ? tourScreen(Number(tourStep[1] ?? 1))
+    : location.hash === "#settings" ? settingsScreen({ record, save, render, message })
     : location.hash === "#export" ? exportScreen(message)
     : !kit ? kitListScreen(message)
     : page === "details" ? kitDetailsScreen(kit, message)
@@ -118,8 +121,9 @@ function kitListScreen(message) {
   exportButton.addEventListener("click", () => { location.hash = "#export"; });
 
   return [
-    el("nav", { class: "top" }, el("a", { href: "#settings" }, "Settings")),
-    el("h1", {}, "Kits"), messageLine(message), homeScreenPrompt({ kitCount: kits.length }), reminder || "", form, list, exportButton,
+    el("nav", { class: "top" }, el("a", { href: "#help" }, "Help"), el("a", { href: "#settings" }, "Settings")),
+    el("h1", {}, "Kits"), messageLine(message), tourOffer(), homeScreenPrompt({ kitCount: kits.length }),
+    reminder || "", form, list, exportButton, madeBy(),
   ];
 }
 

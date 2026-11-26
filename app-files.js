@@ -4,7 +4,7 @@
 // Written by `npm run stamp`: don't edit by hand. Run it after changing, adding or removing any
 // app file. APP_VERSION is a fingerprint of all of them; a new one is how phones learn there's a
 // new version. A test fails if this file is out of date.
-self.APP_VERSION = "c8cdb19c0eca";
+self.APP_VERSION = "7b4d3da93239";
 self.APP_FILES = [
   "index.html",
   "manifest.webmanifest",
@@ -25,6 +25,7 @@ self.APP_FILES = [
   "src/settings-file.js",
   "src/settings-screen.js",
   "src/store.js",
+  "src/tour.js",
   "vendor/fflate-0.8.3.js",
   "vendor/zxing-wasm-reader-3.1.6.js",
   "vendor/zxing_reader-3.1.6.wasm",
