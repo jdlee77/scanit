@@ -1,0 +1,16 @@
+{
+  "name": "scanit",
+  "private": true,
+  "type": "module",
+  "description": "Record the equipment in a Kit by scanning each Item, then Export an Excel workbook",
+  "scripts": {
+    "test": "npm run test:unit && npm run test:app",
+    "test:unit": "node --test \"tests/unit/*.test.js\"",
+    "test:app": "playwright test",
+    "stamp": "node tools/stamp-version.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "exceljs": "4.4.0"
+  }
+}
