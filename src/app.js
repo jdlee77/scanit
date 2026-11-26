@@ -1,10 +1,9 @@
 // App shell: draws the screens and passes every tap to the Kit record,
 // then saves the record with the Store after every change.
-import { KitRecord } from "./kit-record.js";
+import { KitRecord, REFUSED } from "./kit-record.js";
 import { openStore } from "./store.js";
-import { buildExport, encodeXlsx, exportFileName } from "./export-builder.js";
+import { buildExport, encodeXlsx, exportFileName, XLSX_TYPE } from "./export-builder.js";
 
-const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const main = document.querySelector("main");
 
 let store;
@@ -15,7 +14,7 @@ start();
 async function start() {
   try {
     store = await openStore();
-    record = KitRecord.fromJSON((await store.load()) ?? { kits: [] });
+    record = KitRecord.fromJSON(await store.load());
   } catch (error) {
     main.replaceChildren(el("p", { role: "alert", class: "error" },
       "scanit can't use this browser's storage, so nothing could be loaded or saved. "
@@ -44,14 +43,14 @@ function kitListScreen(message) {
     el("div", { class: "row" }, nameInput, el("button", { type: "submit" }, "Create Kit")));
   form.addEventListener("submit", async event => {
     event.preventDefault();
-    if (!nameInput.value.trim()) return render("Give the Kit a name first.");
-    const kit = record.createKit(nameInput.value, new Date().toISOString());
-    if (await save()) location.hash = `#kit/${encodeURIComponent(kit.id)}`;
+    const result = record.createKit(nameInput.value, new Date().toISOString());
+    if (result.outcome === REFUSED) return render(result.reason);
+    if (await save()) location.hash = kitLink(result.kit);
   });
 
   const list = kits.length
     ? el("ul", { class: "kits" }, ...kits.map(kit => el("li", {},
-      el("a", { href: `#kit/${encodeURIComponent(kit.id)}` },
+      el("a", { href: kitLink(kit) },
         el("span", { class: "name" }, kit.name),
         el("span", { class: "count" }, plural(kit.items.length, "Item"))))))
     : el("p", { class: "empty" }, "No Kits yet. Create one to start recording Items.");
@@ -74,7 +73,7 @@ function kitScreen(kit, message) {
   form.addEventListener("submit", async event => {
     event.preventDefault();
     const result = record.addItem(kit.id, serialInput.value, new Date().toISOString());
-    if (result.outcome === "refused") return render(`${result.reason}: type one in, then Save.`);
+    if (result.outcome === REFUSED) return render(result.reason);
     if (await save()) render();
   });
 
@@ -123,10 +122,11 @@ function alertLine(message) {
   return el("p", { role: "alert", class: message ? "error" : "error hidden" }, message ?? "");
 }
 
+const kitLink = kit => `#kit/${encodeURIComponent(kit.id)}`;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
-const formatDate = iso => new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-const formatDateTime = iso => new Date(iso).toLocaleString(undefined,
-  { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const DATE = { year: "numeric", month: "short", day: "numeric" };
+const formatDate = iso => new Date(iso).toLocaleDateString(undefined, DATE);
+const formatDateTime = iso => new Date(iso).toLocaleString(undefined, { ...DATE, hour: "numeric", minute: "2-digit" });
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);

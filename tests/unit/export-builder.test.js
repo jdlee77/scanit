@@ -5,11 +5,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
 import { KitRecord } from "../../src/kit-record.js";
-import { buildExport, encodeXlsx, exportFileName, sheetNames } from "../../src/export-builder.js";
+import { buildExport, encodeXlsx, exportFileName } from "../../src/export-builder.js";
 
 function sampleRecord() {
   const record = new KitRecord();
-  const radios = record.createKit("Radio Cache 3", "2026-11-20T16:00:00.000Z");
+  const { kit: radios } = record.createKit("Radio Cache 3", "2026-11-20T16:00:00.000Z");
   record.addItem(radios.id, "SN-001", "2026-11-26T17:05:00.000Z");
   record.addItem(radios.id, "SN-002", "2026-11-26T17:09:30.000Z");
   record.createKit("EOC Laptops", "2026-11-21T09:15:00.000Z");
@@ -24,7 +24,7 @@ test("an Export has a Summary sheet first, then one sheet per Kit", () => {
 test("the Summary lists each Kit with its created date and Item count", () => {
   const [summary] = buildExport(sampleRecord()).sheets;
   assert.deepEqual(summary.rows, [
-    ["Kit", "Created", "Items"],
+    ["Kit name", "Created", "Item count"],
     ["Radio Cache 3", new Date("2026-11-20T16:00:00.000Z"), 2],
     ["EOC Laptops", new Date("2026-11-21T09:15:00.000Z"), 0],
   ]);
@@ -45,24 +45,30 @@ test("the file is named with the local date", () => {
   assert.equal(exportFileName(new Date(2027, 0, 3, 0, 1)), "scanit-2027-01-03.xlsx");
 });
 
+// The sheet names an Export gets for Kits with these names.
+function sheetNamesFor(kitNames) {
+  const record = new KitRecord();
+  for (const name of kitNames) record.createKit(name, "2026-11-20T16:00:00.000Z");
+  return buildExport(record).sheets.map(s => s.name);
+}
+
 test("sheet names lose the characters Excel forbids", () => {
-  assert.deepEqual(sheetNames(["Cage: A/B [old]?*\\"]), ["Summary", "Cage AB old"]);
+  assert.deepEqual(sheetNamesFor(["Cage: A/B [old]?*\\"]), ["Summary", "Cage AB old"]);
 });
 
 test("sheet names are cut to Excel's 31-character limit", () => {
-  const [, name] = sheetNames(["A".repeat(40)]);
-  assert.equal(name, "A".repeat(31));
+  assert.deepEqual(sheetNamesFor(["A".repeat(40)]), ["Summary", "A".repeat(31)]);
 });
 
-test("duplicate sheet names, including a Kit named Summary, get a numbered suffix", () => {
+test("duplicate sheet names, including a Kit named Summary or History, get a numbered suffix", () => {
   assert.deepEqual(
-    sheetNames(["Radios", "radios", "Summary", "B".repeat(35), "B".repeat(31)]),
-    ["Summary", "Radios", "radios (2)", "Summary (2)", "B".repeat(31), "B".repeat(27) + " (2)"],
+    sheetNamesFor(["Radios", "radios", "Summary", "history", "B".repeat(35), "B".repeat(31)]),
+    ["Summary", "Radios", "radios (2)", "Summary (2)", "history (2)", "B".repeat(31), "B".repeat(27) + " (2)"],
   );
 });
 
 test("a name that cleans to nothing still gets a usable sheet name", () => {
-  assert.deepEqual(sheetNames(["[]", "'Quoted'"]), ["Summary", "Kit", "Quoted"]);
+  assert.deepEqual(sheetNamesFor(["[]", "'Quoted'"]), ["Summary", "Kit", "Quoted"]);
 });
 
 test("the encoded bytes open as a workbook with the same sheets and cells", async () => {
@@ -72,7 +78,7 @@ test("the encoded bytes open as a workbook with the same sheets and cells", asyn
   assert.deepEqual(book.worksheets.map(s => s.name), ["Summary", "Radio Cache 3", "EOC Laptops"]);
 
   const summary = book.getWorksheet("Summary");
-  assert.deepEqual(summary.getRow(1).values.slice(1), ["Kit", "Created", "Items"]);
+  assert.deepEqual(summary.getRow(1).values.slice(1), ["Kit name", "Created", "Item count"]);
   assert.equal(summary.getCell("A2").value, "Radio Cache 3");
   assert.deepEqual(summary.getCell("B2").value, new Date("2026-11-20T16:00:00.000Z"));
   assert.equal(summary.getCell("C2").value, 2);
@@ -88,7 +94,7 @@ test("the encoded bytes open as a workbook with the same sheets and cells", asyn
 
 test("text that looks like XML or a number is kept exactly as typed", async () => {
   const record = new KitRecord();
-  const kit = record.createKit("Tom & Jerry <kit>", "2026-11-20T16:00:00.000Z");
+  const { kit } = record.createKit("Tom & Jerry <kit>", "2026-11-20T16:00:00.000Z");
   record.addItem(kit.id, "0012345678905", "2026-11-26T17:05:00.000Z");
   record.addItem(kit.id, 'S/N "A" & <B>', "2026-11-26T17:06:00.000Z");
   const book = new ExcelJS.Workbook();

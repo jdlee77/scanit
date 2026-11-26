@@ -4,12 +4,17 @@
 
 const newId = () => globalThis.crypto.randomUUID();
 const copy = value => structuredClone(value);
+const cleanText = value => String(value ?? "").trim();
+
+export const ADDED = "added";
+export const REFUSED = "refused";
+const refused = reason => ({ outcome: REFUSED, reason });
 
 export class KitRecord {
   #kits;
 
-  constructor(doc = { kits: [] }) {
-    this.#kits = copy(doc.kits ?? []);
+  constructor(doc) {
+    this.#kits = copy(doc?.kits ?? []);
   }
 
   static fromJSON(doc) {
@@ -31,27 +36,31 @@ export class KitRecord {
     return kit && copy(kit);
   }
 
+  /**
+   * Create a Kit. Like addItem, returns an outcome rather than throwing:
+   *   { outcome: "added", kit } or { outcome: "refused", reason }
+   * A reason is a sentence ready to show the user.
+   */
   createKit(name, now) {
-    const clean = String(name ?? "").trim();
-    if (!clean) throw new Error("A Kit needs a name");
+    const clean = cleanText(name);
+    if (!clean) return refused("Give the Kit a name first.");
     const kit = { id: newId(), name: clean, createdAt: now, items: [] };
     this.#kits.push(kit);
-    return copy(kit);
+    return { outcome: ADDED, kit: copy(kit) };
   }
 
   /**
    * Add an Item to a Kit. Returns an outcome rather than throwing:
-   *   { outcome: "added", item }
-   *   { outcome: "refused", reason }
+   *   { outcome: "added", item } or { outcome: "refused", reason }
    */
   addItem(kitId, serial, now) {
     const kit = this.#find(kitId);
     if (!kit) throw new Error(`No Kit with id ${kitId}`);
-    const clean = String(serial ?? "").trim();
-    if (!clean) return { outcome: "refused", reason: "A Serial is required" };
+    const clean = cleanText(serial);
+    if (!clean) return refused("A Serial is required: type one in, then Save.");
     const item = { id: newId(), serial: clean, scannedAt: now };
     kit.items.push(item);
-    return { outcome: "added", item: copy(item) };
+    return { outcome: ADDED, item: copy(item) };
   }
 
   #find(id) {

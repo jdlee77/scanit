@@ -72,7 +72,7 @@ test("create a Kit, type Serials in, reload, and Export a workbook", async ({ pa
 
   const rows = sheet => sheet.getSheetValues().slice(1).map(r => r.slice(1));
   expect(rows(book.getWorksheet("Summary"))).toEqual([
-    ["Kit", "Created", "Items"],
+    ["Kit name", "Created", "Item count"],
     ["Radio Cache 3", cellTime(8, 30), 2],
     ["EOC Laptops", cellTime(9, 20), 0],
   ]);
@@ -97,7 +97,7 @@ test("a blank Serial or Kit name is not saved", async ({ page }) => {
   await expect(page.getByRole("listitem")).toHaveCount(0);
 });
 
-test("Export with no Kits says there is nothing to export", async ({ page }) => {
+test("Export is turned off until there is a Kit to export", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Export" })).toBeDisabled();
 });

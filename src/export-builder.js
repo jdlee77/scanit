@@ -3,12 +3,14 @@
 // The only library is fflate (vendored), which zips the parts; the workbook XML is written here.
 import { zipSync, strToU8 } from "../vendor/fflate-0.8.3.js";
 
+export const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const SUMMARY = "Summary";
 const MAX_SHEET_NAME = 31;
 // Excel won't open a sheet name containing these, or one that starts or ends with an apostrophe.
 const FORBIDDEN = /[:\\/?*[\]]/g;
-// Names Excel reserves for itself (compared without regard to case).
-const RESERVED = [SUMMARY, "History"];
+// Names no Kit sheet may take (compared without regard to case):
+// our own Summary sheet, and "History", which Excel reserves.
+const TAKEN_NAMES = [SUMMARY, "History"];
 
 /** Workbook content for the Export: { sheets: [{ name, rows }] }. Cells are text, numbers or Dates. */
 export function buildExport(record) {
@@ -16,7 +18,7 @@ export function buildExport(record) {
   const names = sheetNames(kits.map(k => k.name));
   const summary = {
     name: names[0],
-    rows: [["Kit", "Created", "Items"], ...kits.map(k => [k.name, new Date(k.createdAt), k.items.length])],
+    rows: [["Kit name", "Created", "Item count"], ...kits.map(k => [k.name, new Date(k.createdAt), k.items.length])],
   };
   const kitSheets = kits.map((kit, i) => ({
     name: names[i + 1],
@@ -25,9 +27,9 @@ export function buildExport(record) {
   return { sheets: [summary, ...kitSheets] };
 }
 
-/** "Summary" followed by a sheet name for each Kit name, cleaned to fit Excel's rules and made unique. */
-export function sheetNames(kitNames) {
-  const taken = new Set(RESERVED.map(n => n.toLowerCase()));
+// "Summary" followed by a sheet name for each Kit name, cleaned to fit Excel's rules and made unique.
+function sheetNames(kitNames) {
+  const taken = new Set(TAKEN_NAMES.map(n => n.toLowerCase()));
   const names = [SUMMARY];
   for (const kitName of kitNames) {
     const base = cleanSheetName(kitName);
@@ -60,7 +62,7 @@ const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
 const NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const NS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const NS_PKG_REL = "http://schemas.openxmlformats.org/package/2006/relationships";
-const STYLE = { normal: 0, header: 1, dateTime: 2 };
+const STYLE = { header: 1, dateTime: 2 }; // indexes into cellXfs in styles(); 0 is plain
 
 /** Encode workbook content as the bytes of an .xlsx file. */
 export function encodeXlsx({ sheets }) {
@@ -68,6 +70,8 @@ export function encodeXlsx({ sheets }) {
   const files = {
     "[Content_Types].xml": contentTypes(sheets.length),
     "_rels/.rels": rootRels(),
+    "docProps/core.xml": coreProps(),
+    "docProps/app.xml": appProps(),
     "xl/workbook.xml": workbook(sheets),
     "xl/_rels/workbook.xml.rels": workbookRels(sheets.length),
     "xl/styles.xml": styles(),
@@ -142,7 +146,8 @@ const escapeAttr = text => escapeText(text).replace(/"/g, "&quot;");
 
 function workbook(sheets) {
   const list = sheets.map((s, i) => `<sheet name="${escapeAttr(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("");
-  return `<workbook xmlns="${NS_MAIN}" xmlns:r="${NS_REL}"><sheets>${list}</sheets></workbook>`;
+  return `<workbook xmlns="${NS_MAIN}" xmlns:r="${NS_REL}"><bookViews><workbookView activeTab="0"/></bookViews>`
+    + `<sheets>${list}</sheets></workbook>`;
 }
 
 function workbookRels(sheetCount) {
@@ -155,7 +160,22 @@ function workbookRels(sheetCount) {
 }
 
 function rootRels() {
-  return `<Relationships xmlns="${NS_PKG_REL}"><Relationship Id="rId1" Type="${NS_REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
+  return `<Relationships xmlns="${NS_PKG_REL}">`
+    + `<Relationship Id="rId1" Type="${NS_REL}/officeDocument" Target="xl/workbook.xml"/>`
+    + '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>'
+    + `<Relationship Id="rId3" Type="${NS_REL}/extended-properties" Target="docProps/app.xml"/>`
+    + "</Relationships>";
+}
+
+// Document properties: optional in the format, but some spreadsheet apps expect them.
+function coreProps() {
+  return '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
+    + 'xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:creator>scanit</dc:creator></cp:coreProperties>';
+}
+
+function appProps() {
+  return '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">'
+    + "<Application>scanit</Application></Properties>";
 }
 
 function contentTypes(sheetCount) {
@@ -168,6 +188,8 @@ function contentTypes(sheetCount) {
     + `<Override PartName="/xl/workbook.xml" ContentType="${ct}.sheet.main+xml"/>`
     + `<Override PartName="/xl/styles.xml" ContentType="${ct}.styles+xml"/>`
     + `<Override PartName="/xl/sharedStrings.xml" ContentType="${ct}.sharedStrings+xml"/>`
+    + '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'
+    + '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>'
     + sheetsXml + "</Types>";
 }
 
