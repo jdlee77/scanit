@@ -13,22 +13,33 @@ const FORBIDDEN = /[:\\/?*[\]]/g;
 // our own Summary sheet, and "History", which Excel reserves.
 const TAKEN_NAMES = [SUMMARY, "History"];
 
-/** Workbook content for the Export: { sheets: [{ name, rows }] }. Cells are text, numbers or Dates. */
+/**
+ * Workbook content for the Export: { sheets: [{ name, rows, headerRow }] }.
+ * Cells are text, numbers or Dates; headerRow is the index of the row shown in bold.
+ * A Kit with Notes has them at the top of its sheet, one row per line, then a blank row, then the table.
+ */
 export function buildExport(record) {
   const kits = record.kits();
   const names = sheetNames(kits.map(k => k.name));
   const summary = {
     name: names[0],
-    rows: [["Kit name", "Created", "Item count"], ...kits.map(k => [k.name, new Date(k.createdAt), k.items.length])],
+    headerRow: 0,
+    rows: [["Kit name", "Created", "Item count", "Notes"],
+      ...kits.map(k => [k.name, new Date(k.createdAt), k.items.length, k.notes ?? ""])],
   };
   const fields = record.fields();
-  const kitSheets = kits.map((kit, i) => ({
-    name: names[i + 1],
-    rows: [
-      ["Serial", ...fields.map(f => f.name), "Scanned at"],
-      ...kit.items.map(item => [item.serial, ...fields.map(f => item.values?.[f.id] ?? ""), new Date(item.scannedAt)]),
-    ],
-  }));
+  const kitSheets = kits.map((kit, i) => {
+    const notes = kit.notes ? [...kit.notes.split("\n").map(line => [line]), []] : [];
+    return {
+      name: names[i + 1],
+      headerRow: notes.length,
+      rows: [
+        ...notes,
+        ["Serial", ...fields.map(f => f.name), "Scanned at"],
+        ...kit.items.map(item => [item.serial, ...fields.map(f => item.values?.[f.id] ?? ""), new Date(item.scannedAt)]),
+      ],
+    };
+  });
   return { sheets: [summary, ...kitSheets] };
 }
 
@@ -85,13 +96,14 @@ export function encodeXlsx({ sheets }) {
   return zipSync(zipped, { level: 6 });
 }
 
-function worksheet({ rows }, strings) {
+function worksheet({ rows, headerRow = 0 }, strings) {
   const widths = [];
   const rowXml = rows.map((row, r) => {
     const cells = row.map((value, c) => {
-      widths[c] = Math.max(widths[c] ?? 8, displayLength(value));
+      // Notes lines run across the top; they shouldn't stretch the table's first column.
+      if (r >= headerRow) widths[c] = Math.max(widths[c] ?? 8, displayLength(value));
       // A blank stays a truly empty cell, so Excel's filters see it as blank.
-      return value === "" || value == null ? "" : cell(`${columnLetter(c)}${r + 1}`, value, r === 0, strings);
+      return value === "" || value == null ? "" : cell(`${columnLetter(c)}${r + 1}`, value, r === headerRow, strings);
     }).join("");
     return `<row r="${r + 1}">${cells}</row>`;
   }).join("");
@@ -107,7 +119,7 @@ function cell(ref, value, isHeader, strings) {
 
 function displayLength(value) {
   if (value instanceof Date) return 16;
-  return String(value ?? "").length;
+  return Math.max(...String(value ?? "").split("\n").map(line => line.length));
 }
 
 // Excel stores a date as days since 30 Dec 1899, with no time zone: use the phone's local time.

@@ -72,7 +72,7 @@ test("create a Kit, type Serials in, reload, and Export a workbook", async ({ pa
 
   const rows = sheet => sheet.getSheetValues().slice(1).map(r => r.slice(1));
   expect(rows(book.getWorksheet("Summary"))).toEqual([
-    ["Kit name", "Created", "Item count"],
+    ["Kit name", "Created", "Item count", "Notes"],
     ["Radio Cache 3", cellTime(8, 30), 2],
     ["EOC Laptops", cellTime(9, 20), 0],
   ]);

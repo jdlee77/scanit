@@ -21,13 +21,45 @@ test("an Export has a Summary sheet first, then one sheet per Kit", () => {
   assert.deepEqual(sheets.map(s => s.name), ["Summary", "Radio Cache 3", "EOC Laptops"]);
 });
 
-test("the Summary lists each Kit with its created date and Item count", () => {
+test("the Summary lists each Kit with its created date, Item count and Notes", () => {
   const [summary] = buildExport(sampleRecord()).sheets;
   assert.deepEqual(summary.rows, [
-    ["Kit name", "Created", "Item count"],
-    ["Radio Cache 3", new Date("2026-11-20T16:00:00.000Z"), 2],
-    ["EOC Laptops", new Date("2026-11-21T09:15:00.000Z"), 0],
+    ["Kit name", "Created", "Item count", "Notes"],
+    ["Radio Cache 3", new Date("2026-11-20T16:00:00.000Z"), 2, ""],
+    ["EOC Laptops", new Date("2026-11-21T09:15:00.000Z"), 0, ""],
   ]);
+});
+
+test("Kit Notes go at the top of the Kit sheet, one row per line, then a blank row, then the table", () => {
+  const record = sampleRecord();
+  const radios = record.kits()[0];
+  record.setKitNotes(radios.id, "Shelf B2\nTwo batteries missing");
+  const [summary, sheet, laptops] = buildExport(record).sheets;
+  assert.deepEqual(sheet.rows, [
+    ["Shelf B2"],
+    ["Two batteries missing"],
+    [],
+    ["Serial", "Scanned at"],
+    ["SN-001", new Date("2026-11-26T17:05:00.000Z")],
+    ["SN-002", new Date("2026-11-26T17:09:30.000Z")],
+  ]);
+  assert.equal(sheet.headerRow, 3);
+  assert.equal(summary.rows[1][3], "Shelf B2\nTwo batteries missing");
+  assert.equal(laptops.headerRow, 0, "a Kit without Notes starts with the table");
+});
+
+test("in the workbook, the table header under the Notes is the bold row", async () => {
+  const record = sampleRecord();
+  record.setKitNotes(record.kits()[0].id, "Shelf B2");
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(encodeXlsx(buildExport(record)));
+  const radios = book.getWorksheet("Radio Cache 3");
+  assert.equal(radios.getCell("A1").value, "Shelf B2");
+  assert.equal(radios.getCell("A1").font?.bold, undefined);
+  assert.equal(radios.getRow(2).cellCount, 0);
+  assert.equal(radios.getCell("A3").value, "Serial");
+  assert.equal(radios.getCell("A3").font?.bold, true);
+  assert.equal(book.getWorksheet("Summary").getCell("D2").value, "Shelf B2");
 });
 
 test("a Kit sheet has a Serial / Scanned at header and one row per Item in scan order", () => {
@@ -78,7 +110,7 @@ test("the encoded bytes open as a workbook with the same sheets and cells", asyn
   assert.deepEqual(book.worksheets.map(s => s.name), ["Summary", "Radio Cache 3", "EOC Laptops"]);
 
   const summary = book.getWorksheet("Summary");
-  assert.deepEqual(summary.getRow(1).values.slice(1), ["Kit name", "Created", "Item count"]);
+  assert.deepEqual(summary.getRow(1).values.slice(1), ["Kit name", "Created", "Item count", "Notes"]);
   assert.equal(summary.getCell("A2").value, "Radio Cache 3");
   assert.deepEqual(summary.getCell("B2").value, new Date("2026-11-20T16:00:00.000Z"));
   assert.equal(summary.getCell("C2").value, 2);

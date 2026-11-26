@@ -106,3 +106,144 @@ test("line breaks inside a Serial are kept; only the ends are trimmed", () => {
   const { item } = record.addItem(kit.id, "\nMake: Motorola\nSerial: 475CTV1293\n ", T2, { format: "qr_code" });
   assert.equal(item.serial, "Make: Motorola\nSerial: 475CTV1293");
 });
+
+// ---- Managing Items and Kits ------------------------------------------------
+
+/** A record with Kits A and B; A holds SN-1 and SN-2, B holds SN-9. */
+function twoKits() {
+  const record = new KitRecord();
+  const { kit: a } = record.createKit("A", T1);
+  const { kit: b } = record.createKit("B", T1);
+  const sn1 = record.addItem(a.id, "SN-1", T2).item;
+  const sn2 = record.addItem(a.id, "SN-2", T3).item;
+  record.addItem(b.id, "SN-9", T3);
+  return { record, a, b, sn1, sn2 };
+}
+
+test("adding a Serial already in this Kit is refused, naming it", () => {
+  const { record, a } = twoKits();
+  const result = record.addItem(a.id, "  SN-1 ", T3);
+  assert.equal(result.outcome, "refused");
+  assert.match(result.reason, /SN-1 is already in this Kit/);
+  assert.equal(record.kit(a.id).items.length, 2);
+});
+
+test("adding a Serial already in another Kit needs confirming, naming that Kit", () => {
+  const { record, a } = twoKits();
+  const result = record.addItem(a.id, "SN-9", T3);
+  assert.equal(result.outcome, "needs confirming");
+  assert.deepEqual(result.kitNames, ["B"]);
+  assert.match(result.reason, /SN-9 is already in B/);
+  assert.equal(record.kit(a.id).items.length, 2, "nothing is saved until confirmed");
+
+  const confirmed = record.addItem(a.id, "SN-9", T3, { confirmed: true });
+  assert.equal(confirmed.outcome, "added");
+  assert.deepEqual(record.kit(a.id).items.map(i => i.serial), ["SN-1", "SN-2", "SN-9"]);
+});
+
+test("the warning names every other Kit holding the Serial", () => {
+  const { record, a, b } = twoKits();
+  const { kit: c } = record.createKit("C", T1);
+  record.addItem(a.id, "SN-X", T3);
+  record.addItem(b.id, "SN-X", T3, { confirmed: true });
+  const result = record.addItem(c.id, "SN-X", T3);
+  assert.deepEqual(result.kitNames, ["A", "B"]);
+  assert.match(result.reason, /A and B/);
+});
+
+test("Serials match exactly: a different case isn't a duplicate", () => {
+  const { record, a } = twoKits();
+  assert.equal(record.addItem(a.id, "sn-1", T3).outcome, "added");
+});
+
+test("editing an Item changes its Serial and values but keeps its place and scanned-at time", () => {
+  const { record, a, sn1 } = twoKits();
+  const result = record.editItem(a.id, sn1.id, " SN-1A ");
+  assert.equal(result.outcome, "done");
+  const items = record.kit(a.id).items;
+  assert.deepEqual(items.map(i => i.serial), ["SN-1A", "SN-2"]);
+  assert.equal(items[0].scannedAt, T2);
+});
+
+test("saving an Item with its own Serial unchanged is not a duplicate", () => {
+  const { record, a, sn1 } = twoKits();
+  assert.equal(record.editItem(a.id, sn1.id, "SN-1").outcome, "done");
+});
+
+test("editing to a Serial already in this Kit is refused", () => {
+  const { record, a, sn1 } = twoKits();
+  const result = record.editItem(a.id, sn1.id, "SN-2");
+  assert.equal(result.outcome, "refused");
+  assert.match(result.reason, /SN-2 is already in this Kit/);
+  assert.equal(record.kit(a.id).items[0].serial, "SN-1");
+});
+
+test("editing to a Serial in another Kit needs confirming, then saves", () => {
+  const { record, a, sn1 } = twoKits();
+  const result = record.editItem(a.id, sn1.id, "SN-9");
+  assert.equal(result.outcome, "needs confirming");
+  assert.deepEqual(result.kitNames, ["B"]);
+  assert.equal(record.kit(a.id).items[0].serial, "SN-1");
+  assert.equal(record.editItem(a.id, sn1.id, "SN-9", { confirmed: true }).outcome, "done");
+  assert.equal(record.kit(a.id).items[0].serial, "SN-9");
+});
+
+test("editing to a blank Serial is refused", () => {
+  const { record, a, sn1 } = twoKits();
+  assert.equal(record.editItem(a.id, sn1.id, "  ").outcome, "refused");
+});
+
+test("a Serial changed by hand no longer counts as read from a code", () => {
+  const record = new KitRecord();
+  const { kit } = record.createKit("K", T1);
+  const { item } = record.addItem(kit.id, "K9P2207731", T2, { format: "code_128" });
+  record.editItem(kit.id, item.id, "K9P2207731");
+  assert.equal(record.kit(kit.id).items[0].format, "code_128");
+  record.editItem(kit.id, item.id, "K9P2207732");
+  assert.equal(record.kit(kit.id).items[0].format, undefined);
+});
+
+test("editing an Item's Field values grows the Pick list", () => {
+  const record = new KitRecord();
+  const make = record.addField("Make").field;
+  const { kit } = record.createKit("K", T1);
+  const { item } = record.addItem(kit.id, "SN-1", T2, { values: { [make.id]: "Motorola" } });
+  record.editItem(kit.id, item.id, "SN-1", { values: { [make.id]: "Kenwood" } });
+  assert.deepEqual(record.kit(kit.id).items[0].values, { [make.id]: "Kenwood" });
+  assert.deepEqual(record.fields()[0].picks, ["Kenwood", "Motorola"]);
+});
+
+test("deleting an Item leaves the rest in scan order", () => {
+  const { record, a, sn1 } = twoKits();
+  record.addItem(a.id, "SN-3", T3);
+  assert.equal(record.deleteItem(a.id, sn1.id).outcome, "done");
+  assert.deepEqual(record.kit(a.id).items.map(i => i.serial), ["SN-2", "SN-3"]);
+  // Once deleted, the Serial can be added again.
+  assert.equal(record.addItem(a.id, "SN-1", T3).outcome, "added");
+});
+
+test("a Kit can be renamed, but not to a blank name", () => {
+  const { record, a } = twoKits();
+  assert.equal(record.renameKit(a.id, "  Radio Cache 3 ").outcome, "done");
+  assert.equal(record.kit(a.id).name, "Radio Cache 3");
+  const blank = record.renameKit(a.id, " ");
+  assert.equal(blank.outcome, "refused");
+  assert.equal(record.kit(a.id).name, "Radio Cache 3");
+});
+
+test("Kit Notes can be added, edited and cleared", () => {
+  const { record, a } = twoKits();
+  record.setKitNotes(a.id, "  Shelf B2\nCheck batteries  ");
+  assert.equal(record.kit(a.id).notes, "Shelf B2\nCheck batteries");
+  record.setKitNotes(a.id, "Shelf C1");
+  assert.equal(record.kit(a.id).notes, "Shelf C1");
+  record.setKitNotes(a.id, "   ");
+  assert.equal(record.kit(a.id).notes, undefined);
+});
+
+test("deleting a Kit removes it and its Items, so its Serials no longer warn", () => {
+  const { record, a, b } = twoKits();
+  record.deleteKit(b.id);
+  assert.deepEqual(record.kits().map(k => k.name), ["A"]);
+  assert.equal(record.addItem(a.id, "SN-9", T3).outcome, "added");
+});

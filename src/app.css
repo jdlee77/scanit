@@ -39,17 +39,17 @@ button {
 button:disabled { opacity: 0.45; }
 .export { width: 100%; margin-top: 1.2rem; }
 ul, ol { list-style: none; padding: 0; margin: 0; }
-.kits li a, .items li {
+.kits li a, .items li a {
   display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem;
   padding: 0.85rem 0.9rem; margin-bottom: 0.5rem;
   background: var(--card); border: 1px solid var(--line); border-radius: 0.6rem;
 }
-.kits li a { color: inherit; text-decoration: none; }
+.kits li a, .items li a { color: inherit; text-decoration: none; }
 .name, .serial { overflow-wrap: anywhere; min-width: 0; }
 .name { font-weight: 600; }
 .serial { font-family: ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; }
 .count, .items .when { color: var(--muted); white-space: nowrap; font-size: 0.9rem; }
-.items li { flex-wrap: wrap; }
+.items li a { flex-wrap: wrap; }
 .error { color: var(--error); font-weight: 600; }
 .hidden { display: none; }
 
@@ -131,3 +131,18 @@ summary { cursor: pointer; color: var(--muted); font-size: 0.95rem; padding: 0.3
 .pick { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .file-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 .file-actions .file-button { margin: 0; }
+
+/* Managing Items and Kits */
+nav.top.split { justify-content: space-between; align-items: baseline; }
+a.button {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 2.9rem;
+  padding: 0.7rem 1rem; border-radius: 0.5rem; font-weight: 600; text-decoration: none;
+}
+a.button.secondary { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
+button.danger { background: var(--error); color: var(--bg); }
+.kit-notes { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--card); border-left: 4px solid var(--line);
+  padding: 0.6rem 0.8rem; border-radius: 0.4rem; margin: 0.5rem 0; }
+.problem-slot:empty { display: none; }
+.problem-slot .error { margin: 0.4rem 0 0; }
+.problem p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.problem .row { flex-wrap: wrap; }
