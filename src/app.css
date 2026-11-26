@@ -107,7 +107,7 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
 
 /* Fields, Pick lists and Settings */
 h2 { font-size: 1.15rem; margin: 1.6rem 0 0.4rem; }
-nav.top { display: flex; justify-content: flex-end; }
+nav.top { display: flex; justify-content: flex-end; gap: 1.25rem; }
 nav.top a { padding: 0.5rem 0; }
 .wide { width: 100%; margin-bottom: 1rem; }
 .notice { color: var(--ink); background: var(--card); border-left: 4px solid var(--accent); padding: 0.6rem 0.8rem; border-radius: 0.4rem; }
@@ -169,3 +169,22 @@ button.danger { background: var(--error); color: var(--bg); }
   background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 0.5rem;
 }
 .home-prompt p { margin: 0; }
+
+/* Tour and author credit */
+a.button { background: var(--accent); color: var(--accent-ink); }
+a.small-button { min-height: 2.4rem; padding: 0.35rem 0.8rem; font-size: 0.9rem; }
+.tour-offer {
+  display: grid; gap: 0.5rem; margin: 0.5rem 0 0.75rem; padding: 0.75rem 0.9rem;
+  background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 0.5rem;
+}
+.tour-offer p { margin: 0; }
+.tour-progress { margin: 0.5rem 0 0.3rem; font-size: 0.9rem; }
+.tour-dots { display: flex; gap: 0.35rem; margin-bottom: 0.4rem; }
+.tour-dots span { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--line); }
+.tour-dots span.on { background: var(--accent); }
+.tour-intro { font-size: 1.05rem; }
+.tour-points { list-style: disc; padding-left: 1.3rem; display: grid; gap: 0.5rem; margin: 0.5rem 0 1rem; }
+.tour-action { margin-bottom: 1rem; }
+.tour-nav { display: flex; justify-content: space-between; gap: 0.75rem; margin-top: 0.5rem; }
+.tour-nav .button { min-width: 7rem; }
+.made-by { text-align: center; color: var(--muted); font-size: 0.9rem; margin: 2rem 0 0.5rem; }
